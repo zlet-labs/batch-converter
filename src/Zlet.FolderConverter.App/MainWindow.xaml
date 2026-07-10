@@ -8,12 +8,15 @@
         Height="700"
         MinHeight="600"
         Width="1100"
-        MinWidth="820">
+        MinWidth="820"
+        Background="{StaticResource PageBackgroundBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}"
+        WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
     </Window.Resources>
 
-    <Grid Margin="18">
+    <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -39,11 +42,11 @@
             </StackPanel>
 
             <Border Grid.Column="1"
-                    Background="#14243F"
-                    BorderBrush="#2A4A78"
+                    Background="#102B4D"
+                    BorderBrush="#2F6FAB"
                     BorderThickness="1"
                     CornerRadius="16"
-                    Padding="12,6"
+                    Padding="14,7"
                     VerticalAlignment="Top">
                 <TextBlock Text="Файлы не отправляются в интернет"
                            Foreground="#BFE7FF"
@@ -54,7 +57,7 @@
 
         <Border Grid.Row="1"
                 Style="{StaticResource PanelBorderStyle}"
-                Margin="0,0,0,12">
+                Margin="0,0,0,14">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -96,7 +99,7 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="2" Margin="0,0,0,12">
+        <Grid Grid.Row="2" Margin="0,0,0,14">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="1.15*" />
                 <ColumnDefinition Width="1*" />
@@ -149,9 +152,12 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Style="{StaticResource PanelBorderStyle}"
+                        <Border Background="{StaticResource PanelBrush}"
+                                BorderBrush="{StaticResource BorderBrushSoft}"
+                                BorderThickness="1"
+                                CornerRadius="8"
                                 Margin="4,0,0,0"
-                                Padding="12">
+                                Padding="14">
                             <StackPanel>
                                 <TextBlock Text="{Binding Name}"
                                            FontSize="16"

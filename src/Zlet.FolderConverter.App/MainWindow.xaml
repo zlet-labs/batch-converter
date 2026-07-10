@@ -5,111 +5,288 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Zlet Folder Converter"
-        Height="720"
-        MinHeight="560"
-        Width="1120"
-        MinWidth="920">
-    <DockPanel Margin="16">
-        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-            <TextBlock Text="Zlet Folder Converter"
-                       FontSize="24"
-                       FontWeight="SemiBold" />
-            <TextBlock Text="Работает локально, без установки офисных программ"
-                       Margin="0,4,0,0"
-                       Foreground="#555555" />
-        </StackPanel>
+        Height="700"
+        MinHeight="600"
+        Width="1100"
+        MinWidth="820">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </Window.Resources>
 
-        <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,14">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0"
-                    Content="Выбрать папку"
-                    Width="130"
-                    Margin="0,0,8,0"
-                    Click="ChooseFolderButton_Click" />
-            <TextBox Grid.Column="1"
-                     Text="{Binding SelectedFolder}"
-                     IsReadOnly="True"
-                     VerticalContentAlignment="Center"
-                     Margin="0,0,8,0" />
-            <CheckBox Grid.Column="2"
-                      Content="Обрабатывать подпапки"
-                      IsChecked="{Binding IncludeSubfolders}"
-                      VerticalAlignment="Center"
-                      Margin="0,0,12,0" />
-            <Button Grid.Column="3"
-                    Content="Сканировать"
-                    Width="120"
-                    IsEnabled="{Binding CanScan}"
-                    Click="ScanButton_Click" />
+            <StackPanel>
+                <TextBlock Text="Zlet Folder Converter"
+                           FontSize="26"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource TextPrimaryBrush}" />
+                <TextBlock Text="Локальная проверка и конвертация старых офисных файлов"
+                           Margin="0,4,0,0"
+                           Foreground="{StaticResource TextSecondaryBrush}" />
+            </StackPanel>
+
+            <Border Grid.Column="1"
+                    Background="#14243F"
+                    BorderBrush="#2A4A78"
+                    BorderThickness="1"
+                    CornerRadius="16"
+                    Padding="12,6"
+                    VerticalAlignment="Top">
+                <TextBlock Text="Файлы не отправляются в интернет"
+                           Foreground="#BFE7FF"
+                           FontSize="12"
+                           FontWeight="SemiBold" />
+            </Border>
         </Grid>
 
-        <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+        <Border Grid.Row="1"
+                Style="{StaticResource PanelBorderStyle}"
+                Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0"
+                        Content="Выбрать папку"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Margin="0,0,10,0"
+                        Click="ChooseFolderButton_Click" />
+
+                <Border Grid.Column="1"
+                        Background="#0B1424"
+                        BorderBrush="{StaticResource BorderBrushSoft}"
+                        BorderThickness="1"
+                        Padding="10,0"
+                        Height="38"
+                        Margin="0,0,12,0">
+                    <TextBlock Text="{Binding SelectedFolder}"
+                               ToolTip="{Binding SelectedFolder}"
+                               TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center"
+                               Foreground="{StaticResource TextPrimaryBrush}" />
+                </Border>
+
+                <CheckBox Grid.Column="2"
+                          Content="Включать подпапки"
+                          IsChecked="{Binding IncludeSubfolders}"
+                          Margin="0,0,14,0" />
+
+                <Button Grid.Column="3"
+                        Content="Проверить файлы"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        IsEnabled="{Binding CanScan}"
+                        Click="ScanButton_Click" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="1.15*" />
+                <ColumnDefinition Width="1*" />
             </Grid.ColumnDefinitions>
 
-            <TextBlock Grid.Column="0"
-                       Text="{Binding DocCount, StringFormat=DOC: {0}}"
-                       FontWeight="SemiBold"
-                       Margin="0,0,20,0" />
-            <TextBlock Grid.Column="1"
-                       Text="{Binding XlsCount, StringFormat=XLS: {0}}"
-                       FontWeight="SemiBold"
-                       Margin="0,0,20,0" />
-            <TextBlock Grid.Column="2"
-                       Text="{Binding PptCount, StringFormat=PPT: {0}}"
-                       FontWeight="SemiBold"
-                       Margin="0,0,20,0" />
-            <TextBlock Grid.Column="3"
-                       Text="{Binding StateMessage}"
-                       Foreground="#555555" />
+            <Border Grid.Column="0"
+                    Style="{StaticResource PanelBorderStyle}"
+                    Margin="0,0,12,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Text="Возможности прототипа"
+                               FontSize="16"
+                               FontWeight="SemiBold" />
+                    <Grid Grid.Row="1" Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Поиск файлов DOC, XLS и PPT" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="Проверка конфликтов имён" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Предварительный просмотр результата" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0" />
+                        <Border Grid.Row="1" Grid.Column="1" Margin="0,2,0,0" Background="#211C3E" CornerRadius="5" Padding="8,4" HorizontalAlignment="Left">
+                            <TextBlock Text="Конвертация пока не реализована" Foreground="#D7CBFF" />
+                        </Border>
+                        <TextBlock Grid.Row="2"
+                                   Grid.ColumnSpan="2"
+                                   Text="Сейчас приложение анализирует папку и показывает план обработки. Конвертация появится после выбора безопасного встроенного движка."
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,10,0,0" />
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <ItemsControl Grid.Column="1" ItemsSource="{Binding FormatCards}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="3" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource PanelBorderStyle}"
+                                Margin="4,0,0,0"
+                                Padding="12">
+                            <StackPanel>
+                                <TextBlock Text="{Binding Name}"
+                                           FontSize="16"
+                                           FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding CountText}"
+                                           FontSize="22"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource InfoBrush}"
+                                           Margin="0,6,0,0" />
+                                <TextBlock Text="{Binding StatusText}"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,4,0,0"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
         </Grid>
 
-        <Grid>
+        <Grid Grid.Row="3">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="160" />
             </Grid.RowDefinitions>
 
-            <GroupBox Header="Preview planned operations"
-                      Grid.Row="0"
-                      Margin="0,0,0,12">
+            <TextBlock Text="{Binding StateMessage}"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       Margin="2,0,0,8" />
+
+            <Border Grid.Row="1"
+                    Style="{StaticResource PanelBorderStyle}"
+                    Padding="0">
                 <Grid>
                     <TextBlock Text="{Binding EmptyStateMessage}"
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"
-                               Foreground="#666666" />
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               Margin="28" />
+
                     <DataGrid ItemsSource="{Binding Operations}"
                               AutoGenerateColumns="False"
-                              IsReadOnly="True"
-                              CanUserAddRows="False"
-                              HeadersVisibility="Column"
-                              GridLinesVisibility="Horizontal">
+                              AlternationCount="2"
+                              HorizontalScrollBarVisibility="Disabled">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Source" Binding="{Binding RelativePath}" Width="2*" />
-                            <DataGridTextColumn Header="Target" Binding="{Binding TargetPath}" Width="3*" />
-                            <DataGridTextColumn Header="Source format" Binding="{Binding SourceFormat}" Width="Auto" />
-                            <DataGridTextColumn Header="Target format" Binding="{Binding TargetFormat}" Width="Auto" />
-                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="Auto" />
-                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="3*" />
+                            <DataGridTemplateColumn Header="Файл" Width="2.2*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding FilePath}"
+                                                   ToolTip="{Binding SourcePath}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Формат" Width="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding FormatLabel}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Будущий файл" Width="2.1*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding FutureRelativePath}"
+                                                   ToolTip="{Binding TargetPath}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Статус" Width="190">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border CornerRadius="12" Padding="8,4" HorizontalAlignment="Left">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="{StaticResource NeutralStatusBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding StatusTone}" Value="Warning">
+                                                            <Setter Property="Background" Value="{StaticResource WarningStatusBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusTone}" Value="Danger">
+                                                            <Setter Property="Background" Value="{StaticResource DangerStatusBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusTone}" Value="Positive">
+                                                            <Setter Property="Background" Value="{StaticResource PositiveStatusBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="{Binding Status}"
+                                                       Foreground="White"
+                                                       FontSize="12"
+                                                       FontWeight="SemiBold"
+                                                       ToolTip="{Binding Message}" />
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
-            </GroupBox>
-
-            <GroupBox Header="Errors and notices"
-                      Grid.Row="1">
-                <ListBox ItemsSource="{Binding ErrorMessages}" />
-            </GroupBox>
+            </Border>
         </Grid>
-    </DockPanel>
+
+        <Border Grid.Row="4"
+                Style="{StaticResource PanelBorderStyle}"
+                Margin="0,12,0,0"
+                Visibility="{Binding HasErrors, Converter={StaticResource BoolToVisibilityConverter}}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Text="{Binding ErrorHeader}"
+                           FontWeight="SemiBold"
+                           Foreground="#FCA5A5" />
+                <ItemsControl Grid.Row="1"
+                              ItemsSource="{Binding ErrorMessages}"
+                              Margin="0,8,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,4" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </Border>
+    </Grid>
 </Window>

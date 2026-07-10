@@ -22,7 +22,7 @@ public partial class MainWindow : Window
     {
         using var dialog = new Forms.FolderBrowserDialog
         {
-            Description = "Select a folder with DOC, XLS, or PPT files",
+            Description = "Выберите папку с файлами DOC, XLS или PPT",
             UseDescriptionForTitle = true
         };
 
@@ -45,12 +45,12 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
-            _viewModel.StateMessage = "Scan was canceled.";
+            _viewModel.StateMessage = "Проверка отменена.";
         }
         catch (Exception exception)
         {
-            _viewModel.AddError($"Scan failed: {exception.Message}");
-            _viewModel.StateMessage = "Scan failed.";
+            _viewModel.AddError($"Не удалось проверить папку: {exception.Message}");
+            _viewModel.StateMessage = "Проверка завершилась ошибкой.";
         }
     }
 }

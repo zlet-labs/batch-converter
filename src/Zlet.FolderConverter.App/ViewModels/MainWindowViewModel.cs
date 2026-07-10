@@ -17,8 +17,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private int _docCount;
     private int _xlsCount;
     private int _pptCount;
-    private string _stateMessage = "Choose a folder to start scanning.";
-    private string _emptyStateMessage = "No folder scanned yet.";
+    private string _stateMessage = "Выберите папку для проверки.";
+    private string _emptyStateMessage = "Выберите папку со старыми файлами DOC, XLS или PPT.";
 
     public MainWindowViewModel(
         IFolderScanner folderScanner,
@@ -33,6 +33,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<OperationRowViewModel> Operations { get; } = [];
 
     public ObservableCollection<string> ErrorMessages { get; } = [];
+
+    public ObservableCollection<FormatCardViewModel> FormatCards { get; } =
+    [
+        new("DOC"),
+        new("XLS"),
+        new("PPT")
+    ];
 
     public string SelectedFolder
     {
@@ -69,19 +76,37 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public int DocCount
     {
         get => _docCount;
-        private set => SetProperty(ref _docCount, value);
+        private set
+        {
+            if (SetProperty(ref _docCount, value))
+            {
+                UpdateFormatCards();
+            }
+        }
     }
 
     public int XlsCount
     {
         get => _xlsCount;
-        private set => SetProperty(ref _xlsCount, value);
+        private set
+        {
+            if (SetProperty(ref _xlsCount, value))
+            {
+                UpdateFormatCards();
+            }
+        }
     }
 
     public int PptCount
     {
         get => _pptCount;
-        private set => SetProperty(ref _pptCount, value);
+        private set
+        {
+            if (SetProperty(ref _pptCount, value))
+            {
+                UpdateFormatCards();
+            }
+        }
     }
 
     public string StateMessage
@@ -96,19 +121,27 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _emptyStateMessage, value);
     }
 
+    public bool HasErrors => ErrorMessages.Count > 0;
+
+    public string ErrorHeader => HasErrors
+        ? $"Ошибки проверки: {ErrorMessages.Count}"
+        : string.Empty;
+
     public async Task ScanAsync(CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(SelectedFolder))
         {
-            StateMessage = "Selected folder does not exist.";
+            StateMessage = "Выбранная папка недоступна.";
             return;
         }
 
         IsScanning = true;
-        StateMessage = "Scanning...";
-        EmptyStateMessage = "Scanning selected folder...";
+        StateMessage = "Проверяем папку...";
+        EmptyStateMessage = "Проверяем папку...";
         Operations.Clear();
         ErrorMessages.Clear();
+        OnPropertyChanged(nameof(HasErrors));
+        OnPropertyChanged(nameof(ErrorHeader));
 
         try
         {
@@ -123,7 +156,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
             foreach (var error in scanResult.Errors)
             {
-                AddError($"{error.Path}: {error.Message}");
+                AddError($"Не удалось прочитать: {error.Path}. {error.Message}");
             }
 
             var plan = _conversionPlanner.CreatePlan(scanResult, SelectedFolder);
@@ -131,16 +164,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             {
                 Operations.Add(new OperationRowViewModel(operation));
 
-                if (operation.Status is OperationStatus.Conflict or OperationStatus.Failed)
+                if (operation.Status is OperationStatus.Failed)
                 {
                     AddError($"{operation.RelativePath}: {operation.Message}");
                 }
             }
 
             EmptyStateMessage = Operations.Count == 0
-                ? "No DOC, XLS, or PPT files found."
+                ? "Подходящие файлы не найдены."
                 : string.Empty;
-            StateMessage = $"Scan complete. Found {Operations.Count} planned operation(s).";
+            StateMessage = HasErrors
+                ? "Не удалось прочитать часть папок. Подробности показаны ниже."
+                : $"Проверка завершена. Найдено файлов: {Operations.Count}.";
         }
         finally
         {
@@ -151,6 +186,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public void AddError(string message)
     {
         ErrorMessages.Add(message);
+        OnPropertyChanged(nameof(HasErrors));
+        OnPropertyChanged(nameof(ErrorHeader));
+    }
+
+    private void UpdateFormatCards()
+    {
+        FormatCards[0].Count = DocCount;
+        FormatCards[1].Count = XlsCount;
+        FormatCards[2].Count = PptCount;
+        OnPropertyChanged(nameof(FormatCards));
     }
 
     private bool SetProperty<T>(

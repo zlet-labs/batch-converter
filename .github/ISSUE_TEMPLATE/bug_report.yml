@@ -1,0 +1,102 @@
+name: Bug report
+description: Report a reproducible problem in Zlet Folder Converter
+title: "Bug: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem.
+
+        **Do not attach real confidential documents.** Use a synthetic or sanitized fixture and remove names, credentials, local user paths, customer data, financial data, identity data, and medical information from screenshots and logs.
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: Release version or commit SHA.
+      placeholder: v0.1.0-alpha.1 or a8468e4
+    validations:
+      required: true
+
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2 x64
+    validations:
+      required: true
+
+  - type: input
+    id: affected-format
+    attributes:
+      label: Affected format
+      description: Source and target format when relevant.
+      placeholder: JSON → TXT
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Portable or source build, scaling, path characteristics, and other relevant setup details.
+      placeholder: Portable ZIP, 125% scaling, source path contains Cyrillic characters.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: Provide minimal reproducible steps using synthetic data.
+      placeholder: |
+        1. Create a synthetic file...
+        2. Select the folder...
+        3. Click...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - Blocks all conversion
+        - Causes data-safety risk
+        - Breaks one format or scenario
+        - UI or usability problem
+        - Minor issue
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Add sanitized screenshots, concise logs, or a synthetic fixture. Do not include private documents, secrets, or full local user paths.
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Data-safety confirmation
+      options:
+        - label: I verified that the report contains no real confidential documents, credentials, tokens, certificates, or private user data.
+          required: true
+        - label: I searched existing Issues for the same problem.
+          required: true

@@ -386,29 +386,35 @@
                                 Margin="12,10,12,0"
                                 Padding="14,10"
                                 CornerRadius="8"
-                                Background="#664B3514"
-                                BorderBrush="#B88028"
-                                BorderThickness="1"
-                                Visibility="{Binding HasEngineUnavailable, Converter={StaticResource BoolToVisibilityConverter}}">
+                                Background="#5520334D"
+                                BorderBrush="#36527A"
+                                BorderThickness="1">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="!"
-                                           Width="24"
+                                <TextBlock Text="Office"
+                                           Width="44"
                                            Height="24"
                                            Margin="0,0,10,0"
                                            TextAlignment="Center"
                                            FontWeight="Bold"
-                                           Foreground="#FFD37A" />
-                                <TextBlock Grid.Column="1"
-                                           Text="LibreOffice не найден. Офисные файлы пока нельзя преобразовать. JSON-конвертация доступна."
-                                           FontSize="14"
-                                           FontWeight="SemiBold"
-                                           Foreground="#FFE1A6"
-                                           TextWrapping="Wrap"
-                                           VerticalAlignment="Center" />
+                                           Foreground="#70E4FF" />
+                                <WrapPanel Grid.Column="1"
+                                           VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding WordOfficeStatus}"
+                                               Margin="0,0,18,0"
+                                               FontSize="14"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding ExcelOfficeStatus}"
+                                               Margin="0,0,18,0"
+                                               FontSize="14"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding PowerPointOfficeStatus}"
+                                               FontSize="14"
+                                               FontWeight="SemiBold" />
+                                </WrapPanel>
                             </Grid>
                         </Border>
 
@@ -448,7 +454,7 @@
                                     </DataGridTemplateColumn>
                                     <DataGridTextColumn Header="Действие"
                                                         Binding="{Binding ActionLabel}"
-                                                        Width="132" />
+                                                        Width="170" />
                                     <DataGridTemplateColumn Header="Результат" Width="1.25*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
@@ -458,7 +464,7 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="Статус" Width="164">
+                                    <DataGridTemplateColumn Header="Статус" Width="235">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <Border CornerRadius="10"

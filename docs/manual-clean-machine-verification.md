@@ -1,100 +1,75 @@
-# Manual verification checklist
+# Manual clean-machine verification
 
-Record the Windows version, display resolution, scaling, LibreOffice runtime
-version, portable ZIP name, and tester for every release candidate. Do not mark
-an item passed from unit tests alone.
+Record Windows version, display resolution, scaling, installed Word/Excel/
+PowerPoint versions, ZIP size, unpacked size, commit SHA, and tester name.
 
-## Portable and privacy
+## Package integrity
 
-- Extract the complete ZIP to a path containing spaces and Cyrillic characters.
-- Verify `ZletBatchConverter.exe`, `runtime\libreoffice`, `licenses`,
-  `THIRD_PARTY_NOTICES.md`, and `README_PORTABLE.txt` are present.
-- Launch without administrator rights on a machine without separately installed
-  .NET Runtime, Microsoft Office, or LibreOffice.
-- Confirm no installation prompt, automatic download, network request,
-  analytics, or telemetry occurs.
-- Confirm the runtime version matches `licenses\libreoffice\VERSION.txt`.
-- Review the exact license documents copied from the selected runtime package.
+- Fully extract the ZIP to a new local folder.
+- Confirm `ZletBatchConverter.exe` and
+  `Zlet.FolderConverter.OfficeWorker.exe` are present.
+- Confirm there are no source, test, local config, Python, Java, or Office
+  runtime files.
+- Start `ZletBatchConverter.exe` from the fully extracted folder.
+- Confirm the title is `Zlet Batch Converter v0.0.0`.
 
-## Mixed-folder workflow
+## Office capability display
 
-Prepare only synthetic fixtures in a folder with nested paths, spaces,
-Cyrillic, and Unicode:
+- Confirm the UI always shows separate Word, Excel, and PowerPoint statuses.
+- On a machine with Word and Excel but no PowerPoint, confirm:
+  - DOC is ready;
+  - XLS is ready;
+  - PPT says `Требуется Microsoft PowerPoint`;
+  - the batch can still process DOC and XLS.
+- Confirm modern DOCX/XLSX/PPTX files say
+  `Будет скопирован без изменений`.
 
-- valid and invalid JSON;
-- DOC with Cyrillic, a table, and an image;
-- XLS with Cyrillic, a table, and a formula;
-- PPT with multiple slides and an image;
-- DOCX, XLSX, PPTX, ODT, ODS, ODP;
-- PDF, PNG, ZIP, and an unknown extension.
+## Source and selection workflow
 
-Verify:
+- Enter a source path manually.
+- Paste a source path surrounded by quotes.
+- Choose a folder with the picker.
+- Scan with subfolders on and off.
+- Confirm reparse folders/files and Office `~$` files are skipped.
+- Select individual files.
+- Use select all, clear selection, and invert selection.
+- Change a rule and confirm preview refreshes.
 
-- default rules are JSON→TXT, DOC→DOCX, XLS→XLSX, PPT→PPTX;
-- source and output paths accept typed and pasted Unicode/UNC paths; Enter
-  starts scan only for a valid source;
-- all Ready rows are selected after scan; individual selection, «Выбрать все»,
-  «Снять выбор», and «Инвертировать» work across filters;
-- modern Office, OpenDocument, PDF, image, archive, and unknown defaults are
-  «Не трогать»;
-- changing every permitted rule rebuilds preview immediately;
-- XLSX has PDF and «Не трогать», but no CSV option;
-- preview shows only relative paths; full paths appear only in tooltips;
-- filters «Все», «К преобразованию», «Не трогаем», «Конфликты», and «Ошибки»
-  show the correct rows;
-- folder output preserves source subfolders at the explicitly selected root;
-- only the selected output folder or exact result ZIP is excluded from scan;
-- `~$*` and directory reparse points are skipped.
+## Folder output
 
-## Processing and failures
+- Choose a result folder.
+- Confirm nested relative paths are preserved.
+- Convert/copy a mixed batch.
+- Confirm one failed file does not stop later files.
+- Confirm source SHA-256 values do not change.
+- Create an existing target file and directory; confirm neither is overwritten.
+- Run the same batch again and confirm conflicts are reported.
+- Confirm temporary operation folders are removed.
 
-- Run JSON→TXT and JSON→Markdown.
-- Run DOC/XLS/PPT to modern formats and PDF with bundled runtime present.
-- Run at least one DOCX/XLSX/PPTX and ODT/ODS/ODP to PDF.
-- Confirm invalid JSON fails without partial output and does not stop the batch.
-- Confirm missing runtime produces «LibreOffice не найден в portable package».
-- Confirm unreadable source, timeout, malformed output, and process-start
-  failures show short messages without command line or stack trace.
-- Create both a target file conflict and a target directory conflict.
-- Repeat scan and conversion; no existing target is overwritten.
-- Byte-compare every original before and after processing.
-- Confirm partial temp files and LibreOffice profiles are removed.
-- Run folder output and ZIP output, including partial success, zero success, and
-  an existing ZIP conflict. Confirm ZIP contains only successful selected files.
-- Confirm progress and current relative file update without freezing the UI.
-- Confirm the final report shows successes, errors, conflicts, unavailable,
-  skipped, not-selected count, and the correct folder/ZIP result action.
+## ZIP output
 
-## Display checks
+- Choose a new `.zip` path.
+- Confirm only successful selected outputs are included.
+- Confirm nested relative paths are preserved.
+- Confirm an existing ZIP is not overwritten.
+- Repeat the run and confirm the conflict is clear.
 
-- 1366×768 at 100% and 125%.
-- 1920×1080 at 100%, 125%, and 150%.
-- Verify compact startup size, readable rule selectors, no white ComboBox,
-  usable scrolling, visible CTA, progress, and final report.
+## Office behavior
 
-## Release decision
+- Use non-sensitive DOC, XLS, and PPT fixtures.
+- Confirm the relevant Office UI and dialogs do not appear.
+- Confirm original files are unchanged.
+- Confirm produced DOCX/XLSX/PPTX files open normally.
+- Trigger or simulate timeout and confirm already-open user Office documents are
+  not terminated.
+- Record separately which real conversions were actually executed.
 
-- Confirm ZIP contains no repository sources, `bin`, `obj`, test fixtures,
-  personal documents, local absolute paths, credentials, tokens, or API keys.
-- Record ZIP path and exact size.
-- Do not publish if runtime licensing, source availability, clean-machine launch,
-  conversion fidelity, or any safety check remains unverified.
+## Layout
 
-Full e2e not run by agent. Local verification required before merge.
+- Verify at 100% and 125% Windows scaling.
+- Verify at 1366x768.
+- Confirm source/output controls, capability statuses, preview rows, selection
+  controls, report, and primary action remain visible and usable.
 
-## Current local agent verification
-
-- Official LibreOffice 26.2.4 Windows x86-64 package acquired and hash-checked;
-  runtime reports 26.2.4.2.
-- 15/15 synthetic LibreOffice integration tests passed with no skips.
-- Renamed portable ZIP audit passed: 589,149,052 bytes; extracted size
-  1,771,068,495 bytes; 20,275 files.
-- `ZletBatchConverter.exe` launch from a new extraction passed with
-  `ZLET_LIBREOFFICE_PATH` cleared. The process remained responsive with title
-  `Zlet Batch Converter v0.0.0`; bundled `program\soffice.com` was present.
-- The previous local bundled-runtime JSON + DOC conversion completed with
-  2 successes, 0 failures, 0 conflicts, and 0 unavailable operations. The
-  expanded selection/folder/ZIP workflow still requires human UI e2e review.
-- Runtime-present screenshots were retained only as ignored local artifacts.
-- No separate clean Windows machine or VM was available; that release gate is
-  not complete.
+Do not mark the candidate complete from automated tests alone. Record every
+unperformed item explicitly before merge.

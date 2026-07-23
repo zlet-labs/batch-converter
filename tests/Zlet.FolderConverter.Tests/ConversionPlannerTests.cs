@@ -16,18 +16,21 @@ public sealed class ConversionPlannerTests : IDisposable
     [InlineData(SourceFormat.Json, ConversionTarget.Txt, ".txt")]
     [InlineData(SourceFormat.Json, ConversionTarget.Markdown, ".md")]
     [InlineData(SourceFormat.Doc, ConversionTarget.Docx, ".docx")]
-    [InlineData(SourceFormat.Doc, ConversionTarget.Pdf, ".pdf")]
     [InlineData(SourceFormat.Xls, ConversionTarget.Xlsx, ".xlsx")]
-    [InlineData(SourceFormat.Xls, ConversionTarget.Pdf, ".pdf")]
     [InlineData(SourceFormat.Ppt, ConversionTarget.Pptx, ".pptx")]
-    [InlineData(SourceFormat.Ppt, ConversionTarget.Pdf, ".pdf")]
+    [InlineData(SourceFormat.Docx, ConversionTarget.Copy, ".docx")]
+    [InlineData(SourceFormat.Xlsx, ConversionTarget.Copy, ".xlsx")]
+    [InlineData(SourceFormat.Pptx, ConversionTarget.Copy, ".pptx")]
     public void CreatePlan_builds_required_source_target_mappings(
         SourceFormat source,
         ConversionTarget target,
         string expectedExtension)
     {
         var resolver = new TestResolver(new TestAdapter(source, target, available: true));
-        var operation = CreateOperation(source, "nested source.file", target, resolver);
+        var relativePath = target == ConversionTarget.Copy
+            ? $"nested source{expectedExtension}"
+            : "nested source.file";
+        var operation = CreateOperation(source, relativePath, target, resolver);
 
         Assert.Equal(OperationStatus.Ready, operation.Status);
         Assert.Equal(expectedExtension, operation.TargetExtension);
@@ -108,12 +111,28 @@ public sealed class ConversionPlannerTests : IDisposable
     [InlineData(SourceFormat.Docx)]
     [InlineData(SourceFormat.Xlsx)]
     [InlineData(SourceFormat.Pptx)]
-    [InlineData(SourceFormat.Unknown)]
-    public void CreatePlan_skips_modern_and_unknown_formats_by_default(SourceFormat source)
+    public void CreatePlan_copies_modern_formats_by_default(SourceFormat source)
     {
         var operation = CreateOperation(
             source,
             $"source.{source.ToString().ToLowerInvariant()}",
+            ConversionTarget.Copy,
+            new TestResolver(new TestAdapter(
+                source,
+                ConversionTarget.Copy,
+                available: true)));
+
+        Assert.Equal(OperationStatus.Ready, operation.Status);
+        Assert.Equal("Будет скопирован без изменений.", operation.Message);
+        Assert.Equal(Path.GetExtension(operation.SourcePath), operation.TargetExtension);
+    }
+
+    [Fact]
+    public void CreatePlan_skips_unknown_format_by_default()
+    {
+        var operation = CreateOperation(
+            SourceFormat.Unknown,
+            "source.custom",
             ConversionTarget.Skip,
             new TestResolver());
 

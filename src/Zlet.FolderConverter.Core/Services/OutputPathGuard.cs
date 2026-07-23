@@ -2,6 +2,66 @@ namespace Zlet.FolderConverter.Core.Services;
 
 public static class OutputPathGuard
 {
+    public static bool IsSafeSourcePath(
+        string sourcePath,
+        string sourceRootPath,
+        string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath)
+            || string.IsNullOrWhiteSpace(sourceRootPath)
+            || string.IsNullOrWhiteSpace(relativePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var sourceRoot = NormalizeDirectory(sourceRootPath);
+            var source = Path.GetFullPath(sourcePath);
+            if (!File.Exists(source)
+                || !IsStrictlyWithin(source, sourceRoot)
+                || Path.IsPathRooted(relativePath)
+                || ContainsTraversal(relativePath))
+            {
+                return false;
+            }
+
+            var expectedSource = Path.GetFullPath(Path.Combine(sourceRoot, relativePath));
+            if (!string.Equals(source, expectedSource, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            for (var current = source;
+                 !string.IsNullOrWhiteSpace(current) && IsWithinOrEqual(current, sourceRoot);
+                 current = Path.GetDirectoryName(current) ?? string.Empty)
+            {
+                if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                {
+                    return false;
+                }
+
+                if (string.Equals(
+                        NormalizeDirectory(current),
+                        sourceRoot,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+            }
+
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException
+                                           or IOException
+                                           or UnauthorizedAccessException
+                                           or NotSupportedException
+                                           or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
     public static OutputDestinationValidation ValidateFolderDestination(
         string sourceRootPath,
         string outputRootPath)

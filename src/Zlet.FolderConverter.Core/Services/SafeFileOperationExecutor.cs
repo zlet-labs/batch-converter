@@ -1,47 +1,51 @@
-using System.ComponentModel;
 using System.Security.Cryptography;
 using Zlet.FolderConverter.Core.Models;
 
 namespace Zlet.FolderConverter.Core.Services;
 
-public sealed class LibreOfficeConversionAdapter(
-    ILibreOfficeRuntimeLocator runtimeLocator,
-    ILibreOfficeProcessRunner processRunner,
-    IOutputResultValidator validator,
-    LibreOfficeConversionOptions? options = null) : IConversionAdapter
+internal sealed record TemporaryOutputProductionResult(
+    bool Success,
+    string ErrorCode = "",
+    string UserMessage = "Не удалось обработать файл.",
+    bool TimedOut = false,
+    int? ExitCode = null,
+    bool HasStandardOutput = false,
+    bool HasStandardError = false,
+    int? HResult = null);
+
+internal sealed class SafeFileOperationExecutor
 {
-    private readonly LibreOfficeConversionOptions _options = options ?? new LibreOfficeConversionOptions();
+    private readonly IOutputResultValidator _validator;
+    private readonly string _temporaryRoot;
 
-    public bool IsAvailable => runtimeLocator.Locate().IsAvailable;
+    public SafeFileOperationExecutor(
+        IOutputResultValidator validator,
+        string? temporaryRoot = null)
+    {
+        _validator = validator;
+        _temporaryRoot = Path.GetFullPath(
+            temporaryRoot
+            ?? Path.Combine(Path.GetTempPath(), "ZletBatchConverter", "operations"));
+    }
 
-    public string AvailabilityMessage => IsAvailable
-        ? "LibreOffice доступен локально."
-        : "LibreOffice не найден в portable package.";
-
-    public bool CanConvert(SourceFormat sourceFormat, ConversionTarget target) =>
-        FormatCapabilityCatalog.RequiresLibreOffice(sourceFormat, target);
-
-    public async Task<ConversionResult> ConvertAsync(
+    public async Task<ConversionResult> ExecuteAsync(
         PlannedOperation operation,
+        ConversionTarget validationTarget,
+        Func<string, CancellationToken, Task<TemporaryOutputProductionResult>> produceAsync,
+        string successMessage,
         CancellationToken cancellationToken)
     {
-        var runtime = runtimeLocator.Locate();
-        if (!runtime.IsAvailable)
+        var sourceRoot = ResolveSourceRoot(operation);
+        if (!OutputPathGuard.IsSafeSourcePath(
+                operation.SourcePath,
+                sourceRoot,
+                operation.RelativePath))
         {
             return Result(
                 operation,
-                OperationStatus.EngineUnavailable,
-                "LibreOffice не найден в portable package.",
-                "runtime_missing");
-        }
-
-        if (!CanConvert(operation.SourceFormat, operation.Target))
-        {
-            return Result(
-                operation,
-                OperationStatus.Unsupported,
-                "Выбранное преобразование не поддерживается.",
-                "mapping_unsupported");
+                OperationStatus.Failed,
+                "Исходный файл небезопасен или находится вне выбранной папки.",
+                "unsafe_source");
         }
 
         if (!OutputPathGuard.IsSafeTargetPath(operation.TargetPath, operation.OutputRootPath))
@@ -62,10 +66,12 @@ public sealed class LibreOfficeConversionAdapter(
                 "target_conflict");
         }
 
-        FileSnapshot sourceSnapshot;
+        SourceFileSnapshot snapshot;
         try
         {
-            sourceSnapshot = await FileSnapshot.CreateAsync(operation.SourcePath, cancellationToken);
+            snapshot = await SourceFileSnapshot.CreateAsync(
+                operation.SourcePath,
+                cancellationToken);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -76,95 +82,72 @@ public sealed class LibreOfficeConversionAdapter(
                 "source_unreadable");
         }
 
-        var temporaryRoot = Path.GetFullPath(
-            _options.TemporaryRootPath
-            ?? Path.Combine(Path.GetTempPath(), "ZletFolderConverter"));
-        var operationRoot = Path.Combine(temporaryRoot, Guid.NewGuid().ToString("N"));
-        var outputDirectory = Path.Combine(operationRoot, "output");
-        var profileDirectory = Path.Combine(operationRoot, "profile");
+        var operationRoot = Path.Combine(_temporaryRoot, Guid.NewGuid().ToString("N"));
+        var temporaryOutput = Path.Combine(
+            operationRoot,
+            "output",
+            $"result{operation.TargetExtension}");
         string? stagingPath = null;
-
         try
         {
-            Directory.CreateDirectory(outputDirectory);
-            Directory.CreateDirectory(profileDirectory);
-            var processResult = await processRunner.RunAsync(
-                new LibreOfficeProcessRequest(
-                    runtime.ExecutablePath,
-                    operation.SourcePath,
-                    outputDirectory,
-                    profileDirectory,
-                    operation.Target),
-                _options.Timeout,
-                cancellationToken);
-
-            if (processResult.TimedOut)
+            Directory.CreateDirectory(Path.GetDirectoryName(temporaryOutput)!);
+            var production = await produceAsync(temporaryOutput, cancellationToken);
+            if (!production.Success)
             {
                 return Result(
                     operation,
                     OperationStatus.Failed,
-                    "Преобразование превысило допустимое время.",
-                    "process_timeout",
-                    processResult.ExitCode,
-                    timedOut: true,
-                    hasStandardOutput: !string.IsNullOrWhiteSpace(processResult.StandardOutput),
-                    hasStandardError: !string.IsNullOrWhiteSpace(processResult.StandardError));
+                    production.UserMessage,
+                    production.ErrorCode,
+                    production.ExitCode,
+                    production.TimedOut,
+                    production.HasStandardOutput,
+                    production.HasStandardError,
+                    production.HResult);
             }
 
-            if (processResult.ExitCode != 0)
+            if (!File.Exists(temporaryOutput)
+                || new FileInfo(temporaryOutput).Length == 0)
             {
                 return Result(
                     operation,
                     OperationStatus.Failed,
-                    "LibreOffice не создал ожидаемый результат.",
-                    "process_exit_failure",
-                    processResult.ExitCode,
-                    hasStandardOutput: !string.IsNullOrWhiteSpace(processResult.StandardOutput),
-                    hasStandardError: !string.IsNullOrWhiteSpace(processResult.StandardError));
+                    "Приложение не создало ожидаемый результат.",
+                    "output_missing");
             }
 
-            var temporaryOutput = Path.Combine(
-                outputDirectory,
-                Path.GetFileNameWithoutExtension(operation.SourcePath) + operation.TargetExtension);
-            if (!File.Exists(temporaryOutput))
+            if (!Path.GetExtension(temporaryOutput).Equals(
+                    operation.TargetExtension,
+                    StringComparison.OrdinalIgnoreCase))
             {
                 return Result(
                     operation,
                     OperationStatus.Failed,
-                    "LibreOffice не создал ожидаемый результат.",
-                    "output_missing",
-                    processResult.ExitCode,
-                    hasStandardOutput: !string.IsNullOrWhiteSpace(processResult.StandardOutput),
-                    hasStandardError: !string.IsNullOrWhiteSpace(processResult.StandardError));
+                    "Расширение результата не прошло проверку.",
+                    "output_extension_invalid");
             }
 
-            var validation = validator.Validate(temporaryOutput, operation.Target);
-            if (!validation.IsValid)
+            var temporaryValidation = _validator.Validate(temporaryOutput, validationTarget);
+            if (!temporaryValidation.IsValid)
             {
                 return Result(
                     operation,
                     OperationStatus.Failed,
                     "Формат результата не прошёл проверку.",
-                    validation.ErrorCode,
-                    processResult.ExitCode,
-                    hasStandardOutput: !string.IsNullOrWhiteSpace(processResult.StandardOutput),
-                    hasStandardError: !string.IsNullOrWhiteSpace(processResult.StandardError));
+                    temporaryValidation.ErrorCode);
             }
 
-            if (!await sourceSnapshot.IsUnchangedAsync(operation.SourcePath, cancellationToken))
+            if (!await snapshot.IsUnchangedAsync(operation.SourcePath, cancellationToken))
             {
                 return Result(
                     operation,
                     OperationStatus.Failed,
                     "Исходный файл изменился во время обработки.",
-                    "source_changed",
-                    processResult.ExitCode,
-                    hasStandardOutput: !string.IsNullOrWhiteSpace(processResult.StandardOutput),
-                    hasStandardError: !string.IsNullOrWhiteSpace(processResult.StandardError));
+                    "source_changed");
             }
 
             var targetDirectory = Path.GetDirectoryName(operation.TargetPath);
-            if (targetDirectory is null)
+            if (string.IsNullOrWhiteSpace(targetDirectory))
             {
                 return Result(
                     operation,
@@ -196,7 +179,7 @@ public sealed class LibreOfficeConversionAdapter(
                 targetDirectory,
                 $".{Path.GetFileName(operation.TargetPath)}.{Guid.NewGuid():N}.tmp");
             File.Copy(temporaryOutput, stagingPath, overwrite: false);
-            var stagingValidation = validator.Validate(stagingPath, operation.Target);
+            var stagingValidation = _validator.Validate(stagingPath, validationTarget);
             if (!stagingValidation.IsValid)
             {
                 return Result(
@@ -208,7 +191,7 @@ public sealed class LibreOfficeConversionAdapter(
 
             File.Move(stagingPath, operation.TargetPath, overwrite: false);
             stagingPath = null;
-            var finalValidation = validator.Validate(operation.TargetPath, operation.Target);
+            var finalValidation = _validator.Validate(operation.TargetPath, validationTarget);
             if (!finalValidation.IsValid)
             {
                 File.Delete(operation.TargetPath);
@@ -219,20 +202,11 @@ public sealed class LibreOfficeConversionAdapter(
                     finalValidation.ErrorCode);
             }
 
-            return new ConversionResult(operation, OperationStatus.Succeeded, "Преобразовано.");
+            return new ConversionResult(operation, OperationStatus.Succeeded, successMessage);
         }
         catch (OperationCanceledException)
         {
             throw;
-        }
-        catch (Exception exception) when (exception is Win32Exception
-                                           or InvalidOperationException)
-        {
-            return Result(
-                operation,
-                OperationStatus.Failed,
-                "Не удалось запустить LibreOffice.",
-                "process_start_failure");
         }
         catch (IOException) when (File.Exists(operation.TargetPath)
                                   || Directory.Exists(operation.TargetPath))
@@ -243,7 +217,9 @@ public sealed class LibreOfficeConversionAdapter(
                 "Файл результата уже существует.",
                 "target_conflict");
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException
+                                           or UnauthorizedAccessException
+                                           or InvalidDataException)
         {
             return Result(
                 operation,
@@ -254,8 +230,27 @@ public sealed class LibreOfficeConversionAdapter(
         finally
         {
             TryDeleteFile(stagingPath);
-            TryDeleteTemporaryDirectory(operationRoot, temporaryRoot);
+            TryDeleteDirectory(operationRoot);
         }
+    }
+
+    private static string ResolveSourceRoot(PlannedOperation operation)
+    {
+        if (!string.IsNullOrWhiteSpace(operation.SourceRootPath))
+        {
+            return operation.SourceRootPath;
+        }
+
+        var root = Path.GetFullPath(operation.SourcePath);
+        var components = operation.RelativePath.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries);
+        for (var index = 0; index < components.Length; index++)
+        {
+            root = Path.GetDirectoryName(root) ?? string.Empty;
+        }
+
+        return root;
     }
 
     private static ConversionResult Result(
@@ -266,7 +261,8 @@ public sealed class LibreOfficeConversionAdapter(
         int? exitCode = null,
         bool timedOut = false,
         bool hasStandardOutput = false,
-        bool hasStandardError = false) =>
+        bool hasStandardError = false,
+        int? hResult = null) =>
         new(
             operation,
             status,
@@ -276,7 +272,8 @@ public sealed class LibreOfficeConversionAdapter(
                 exitCode,
                 timedOut,
                 HasStandardOutput: hasStandardOutput,
-                HasStandardError: hasStandardError));
+                HasStandardError: hasStandardError,
+                HResult: hResult));
 
     private static void TryDeleteFile(string? path)
     {
@@ -294,14 +291,17 @@ public sealed class LibreOfficeConversionAdapter(
         }
     }
 
-    private static void TryDeleteTemporaryDirectory(string operationRoot, string temporaryRoot)
+    private void TryDeleteDirectory(string operationRoot)
     {
         try
         {
-            var root = Path.GetFullPath(temporaryRoot)
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var root = _temporaryRoot.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar);
             var operation = Path.GetFullPath(operationRoot);
-            if (operation.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            if (operation.StartsWith(
+                    root + Path.DirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase)
                 && Directory.Exists(operation))
             {
                 Directory.Delete(operation, recursive: true);
@@ -314,9 +314,9 @@ public sealed class LibreOfficeConversionAdapter(
         }
     }
 
-    private sealed record FileSnapshot(long Length, byte[] Hash)
+    private sealed record SourceFileSnapshot(long Length, byte[] Hash)
     {
-        public static async Task<FileSnapshot> CreateAsync(
+        public static async Task<SourceFileSnapshot> CreateAsync(
             string path,
             CancellationToken cancellationToken)
         {
@@ -328,7 +328,7 @@ public sealed class LibreOfficeConversionAdapter(
                 81920,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
             var hash = await SHA256.HashDataAsync(stream, cancellationToken);
-            return new FileSnapshot(stream.Length, hash);
+            return new SourceFileSnapshot(stream.Length, hash);
         }
 
         public async Task<bool> IsUnchangedAsync(

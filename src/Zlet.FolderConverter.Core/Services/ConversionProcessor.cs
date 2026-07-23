@@ -34,12 +34,10 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
             {
                 result = new ConversionResult(
                     operation,
-                    FormatCapabilityCatalog.RequiresLibreOffice(operation.SourceFormat, operation.Target)
-                        ? OperationStatus.EngineUnavailable
-                        : OperationStatus.Unsupported,
-                    FormatCapabilityCatalog.RequiresLibreOffice(operation.SourceFormat, operation.Target)
-                        ? "LibreOffice не найден в portable package."
-                        : "Преобразование недоступно.");
+                    adapter is null
+                        ? OperationStatus.Unsupported
+                        : OperationStatus.EngineUnavailable,
+                    adapter?.AvailabilityMessage ?? "Преобразование недоступно.");
             }
             else
             {

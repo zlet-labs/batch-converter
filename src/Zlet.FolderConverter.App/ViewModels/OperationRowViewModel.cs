@@ -24,16 +24,19 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         _selectionChanged = selectionChanged;
         SourcePath = operation.SourcePath;
         FilePath = operation.RelativePath;
-        ActionLabel = operation.Target == ConversionTarget.Skip
-            ? "Не трогать"
-            : $"{operation.SourceFormat.ToDisplayName()} → {operation.Target.ToDisplayName()}";
+        ActionLabel = operation.Target switch
+        {
+            ConversionTarget.Skip => "Не трогать",
+            ConversionTarget.Copy => "Копировать без изменений",
+            _ => $"{operation.SourceFormat.ToDisplayName()} → {operation.Target.ToDisplayName()}"
+        };
         TargetPath = operation.TargetPath;
         ResultPath = operation.Target == ConversionTarget.Skip
             ? "—"
             : Path.ChangeExtension(operation.RelativePath, operation.TargetExtension);
         Status = isNotSelected && status == OperationStatus.Ready
             ? "Не выбрано"
-            : LocalizeStatus(status);
+            : LocalizeStatus(status, operation.Target, result?.Message ?? operation.Message);
         StatusTone = status switch
         {
             OperationStatus.Ready or OperationStatus.Converting or OperationStatus.Succeeded => "Positive",
@@ -76,15 +79,21 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
-    public static string LocalizeStatus(OperationStatus status) => status switch
+    public static string LocalizeStatus(
+        OperationStatus status,
+        ConversionTarget target = ConversionTarget.Skip,
+        string message = "") => status switch
     {
-        OperationStatus.Ready => "Готов",
+        OperationStatus.Ready when target == ConversionTarget.Copy => "Будет скопирован без изменений",
+        OperationStatus.Ready => "Готово к преобразованию",
         OperationStatus.Skipped => "Пропущен",
         OperationStatus.Converting => "В процессе",
-        OperationStatus.Succeeded => "Успешно",
-        OperationStatus.Conflict => "Конфликт",
+        OperationStatus.Succeeded when target == ConversionTarget.Copy => "Скопировано",
+        OperationStatus.Succeeded => "Преобразовано",
+        OperationStatus.Conflict => "Файл результата уже существует",
         OperationStatus.Failed => "Ошибка",
-        OperationStatus.EngineUnavailable => "Нет движка",
+        OperationStatus.EngineUnavailable when !string.IsNullOrWhiteSpace(message) => message,
+        OperationStatus.EngineUnavailable => "Требуется Microsoft Office",
         OperationStatus.Unsupported => "Не поддерживается",
         _ => "Неизвестно"
     };

@@ -1,78 +1,47 @@
-# Zlet Batch Converter
+# Zlet Batch Converter v0.0.0
 
-`v0.0.0` pre-alpha Windows desktop application for local, rule-based batch
-conversion. The repository intentionally remains named `folder-converter`
-until PR #3 is reviewed and merged:
-`https://github.com/zlet-labs/folder-converter`.
+Zlet Batch Converter is a local Windows desktop prototype for processing files
+in a folder while preserving relative subfolder paths. Files are not uploaded.
+Repository: https://github.com/zlet-labs/folder-converter
 
-Choose or paste a source folder, scan it, adjust one rule per detected format,
-and select individual ready operations. The preview supports Select All, Clear,
-Invert, and status filters without losing selection.
+## Supported operations
 
-Results can be written to an editable folder destination or to a result ZIP.
-Relative subfolder structure is preserved. Originals are never overwritten,
-deleted, moved, or intentionally modified; existing targets and ZIP files are
-reported as conflicts.
+| Source | Result | Requirement |
+|---|---|---|
+| `.doc` | `.docx` | Microsoft Word installed |
+| `.xls` | `.xlsx` | Microsoft Excel installed |
+| `.ppt` | `.pptx` | Microsoft PowerPoint installed |
+| `.docx`, `.xlsx`, `.pptx` | unchanged safe copy | no Office application required |
+| `.json` | `.txt` or `.md` | no Office application required |
 
-## Conversion rules
+Word, Excel, and PowerPoint are detected independently. A missing application
+disables only its own legacy format; it does not block the rest of a batch.
+Microsoft Office is not included in the portable package.
 
-| Source | Available targets | Default |
-| --- | --- | --- |
-| JSON | TXT, Markdown, Skip | TXT |
-| DOC | DOCX, PDF, Skip | DOCX |
-| XLS | XLSX, PDF, Skip | XLSX |
-| PPT | PPTX, PDF, Skip | PPTX |
-| DOCX, XLSX, PPTX | PDF, Skip | Skip |
-| ODT | DOCX, PDF, Skip | Skip |
-| ODS | XLSX, PDF, Skip | Skip |
-| ODP | PPTX, PDF, Skip | Skip |
-| PDF, images, archives, unknown | Skip | Skip |
+## Safety model
 
-JSON uses the in-process adapter. Office and OpenDocument conversions use the
-bundled LibreOffice runtime in headless mode with isolated temporary profiles.
-OOXML and PDF outputs are structurally validated. Conversion fidelity depends
-on LibreOffice and the source document; pixel-perfect compatibility is not
-guaranteed. XLSX-to-CSV-per-sheet is outside ZL-041.
+- The UI process never performs COM automation.
+- One STA `.NET` worker process handles one Office conversion.
+- The UI sends a JSON request through redirected standard input; file paths are
+  not interpolated into a shell command.
+- The worker opens legacy files read-only, disables macros, suppresses dialogs,
+  and does not add files to Recent/MRU lists.
+- Source paths must remain inside the selected source folder.
+- Reparse-point files and folders are skipped.
+- SHA-256 is calculated before and after processing.
+- Output is created in a temporary directory, validated as OOXML, copied to a
+  same-directory staging file, and atomically moved to the final path.
+- Existing files and directories are never overwritten.
+- A timeout terminates the worker and only an Office PID proven to be a new
+  instance created by that worker. Processes are never killed by name.
+- Failure of one file does not stop later selected files.
 
-## Result modes
-
-- Folder: defaults to `<source>\_converted`, but another child or external
-  folder can be entered or selected.
-- ZIP archive: defaults to
-  `<source>\ZletBatchConverter-v0.0.0-results.zip`. Only successful selected
-  outputs are included; partial success creates a ZIP, while zero successes do
-  not create an empty archive.
-
-The selected output folder or exact output ZIP is excluded from later scans.
-Path traversal, unsafe ZIP entries, reparse-point escapes, and overwrites are
-rejected.
-
-## Portable package
-
-The self-contained Windows x64 layout is:
-
-```text
-ZletBatchConverter-v0.0.0-win-x64/
-  ZletBatchConverter.exe
-  runtime/
-    libreoffice/
-  licenses/
-  THIRD_PARTY_NOTICES.md
-  README_PORTABLE.txt
-```
-
-Build it from an explicitly selected official LibreOffice runtime:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/publish-portable.ps1 `
-  -LibreOfficePath "C:\path\to\LibreOffice"
-```
-
-LibreOffice binaries and generated portable artifacts are not committed.
-The package requires no separately installed .NET Runtime, Microsoft Office,
-or LibreOffice. No public release is published before manual review.
+Technical diagnostics contain error codes and process metadata only. They do not
+contain document content, secret values, or full document paths.
 
 ## Build and test
+
+Requirements: Windows x64 and the .NET 8 SDK.
 
 ```powershell
 dotnet restore FolderConverter.sln
@@ -80,17 +49,42 @@ dotnet build FolderConverter.sln -c Release
 dotnet test FolderConverter.sln -c Release
 ```
 
-Real synthetic LibreOffice integration tests require:
+Office integration tests are opt-in and require a real legacy fixture for each
+application being tested:
 
 ```powershell
-$env:ZLET_LIBREOFFICE_PATH = "C:\path\to\LibreOffice"
-dotnet test FolderConverter.sln -c Release --filter Category=LibreOfficeIntegration
+$env:ZLET_OFFICE_INTEGRATION = "1"
+$env:ZLET_OFFICE_WORD_FIXTURE = "C:\fixtures\sample.doc"
+$env:ZLET_OFFICE_EXCEL_FIXTURE = "C:\fixtures\sample.xls"
+$env:ZLET_OFFICE_POWERPOINT_FIXTURE = "C:\fixtures\sample.ppt"
+dotnet test FolderConverter.sln -c Release --filter Category=OfficeIntegration
 ```
 
-The verified runtime is official LibreOffice 26.2.4 for Windows x86-64
-(reported version 26.2.4.2). The 15 exercised mappings cover legacy Office to
-OOXML/PDF, modern Office to PDF, and OpenDocument to OOXML/PDF.
+An integration test is skipped, not passed, when its Office application or
+fixture is absent.
 
-Files stay local: there is no cloud conversion, telemetry, analytics, or
-runtime download. Actual local paths must not be committed, logged, or included
-in exported packages.
+## Portable package
+
+```powershell
+.\scripts\publish-portable.ps1
+```
+
+The script publishes Windows x64, self-contained .NET 8 application and worker
+files, then creates:
+
+`artifacts/portable/win-x64/ZletBatchConverter-v0.0.0-win-x64.zip`
+
+The package contains neither Microsoft Office nor conversion runtimes such as
+Python or Java. Do not publish a GitHub Release before separate review and
+manual verification.
+
+## Limitations
+
+Originals are not intentionally modified, but complex, password-protected,
+corrupted, or unsupported legacy documents may fail to convert. Results can
+differ from the source because the installed Office version and document
+features vary. This version does not promise conversion on a computer without
+the corresponding Microsoft Office application.
+
+See [README_RU.md](README_RU.md) and
+[docs/manual-clean-machine-verification.md](docs/manual-clean-machine-verification.md).

@@ -5,8 +5,17 @@ using Zlet.FolderConverter.Core.Models;
 
 namespace Zlet.FolderConverter.Core.Services;
 
-public sealed class JsonConversionAdapter(IOutputResultValidator validator) : IConversionAdapter
+public sealed class JsonConversionAdapter : IConversionAdapter
 {
+    private readonly SafeFileOperationExecutor _executor;
+
+    public JsonConversionAdapter(
+        IOutputResultValidator validator,
+        string? temporaryRoot = null)
+    {
+        _executor = new SafeFileOperationExecutor(validator, temporaryRoot);
+    }
+
     public bool IsAvailable => true;
 
     public string AvailabilityMessage => "JSON-преобразование доступно локально.";
@@ -15,106 +24,45 @@ public sealed class JsonConversionAdapter(IOutputResultValidator validator) : IC
         sourceFormat == SourceFormat.Json
         && target is ConversionTarget.Txt or ConversionTarget.Markdown;
 
-    public async Task<ConversionResult> ConvertAsync(
+    public Task<ConversionResult> ConvertAsync(
         PlannedOperation operation,
         CancellationToken cancellationToken)
     {
-        string? temporaryPath = null;
-        try
-        {
-            if (!OutputPathGuard.IsSafeTargetPath(operation.TargetPath, operation.OutputRootPath))
-            {
-                return new ConversionResult(operation, OperationStatus.Failed, "Недопустимый путь результата.");
-            }
-
-            if (File.Exists(operation.TargetPath) || Directory.Exists(operation.TargetPath))
-            {
-                return new ConversionResult(operation, OperationStatus.Conflict, "Файл или папка результата уже существует.");
-            }
-
-            var sourceText = await File.ReadAllTextAsync(operation.SourcePath, Encoding.UTF8, cancellationToken);
-            using var document = JsonDocument.Parse(sourceText);
-            var normalizedJson = FormatJson(document);
-            var content = operation.TargetExtension.Equals(".md", StringComparison.OrdinalIgnoreCase)
-                ? CreateMarkdown(Path.GetFileName(operation.SourcePath), normalizedJson)
-                : normalizedJson;
-
-            var targetDirectory = Path.GetDirectoryName(operation.TargetPath)
-                ?? throw new IOException("Не удалось определить папку результата.");
-            Directory.CreateDirectory(targetDirectory);
-            temporaryPath = Path.Combine(
-                targetDirectory,
-                $".{Path.GetFileName(operation.TargetPath)}.{Guid.NewGuid():N}.tmp");
-            await File.WriteAllTextAsync(
-                temporaryPath,
-                content,
-                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-                cancellationToken);
-
-            var temporaryValidation = validator.Validate(temporaryPath, operation.Target);
-            if (!temporaryValidation.IsValid)
-            {
-                return new ConversionResult(
-                    operation,
-                    OperationStatus.Failed,
-                    "Формат результата не прошёл проверку.",
-                    new ConversionDiagnostic(temporaryValidation.ErrorCode));
-            }
-
-            File.Move(temporaryPath, operation.TargetPath, overwrite: false);
-            temporaryPath = null;
-
-            var finalValidation = validator.Validate(operation.TargetPath, operation.Target);
-            if (!finalValidation.IsValid)
-            {
-                File.Delete(operation.TargetPath);
-                return new ConversionResult(
-                    operation,
-                    OperationStatus.Failed,
-                    "Формат результата не прошёл проверку.",
-                    new ConversionDiagnostic(finalValidation.ErrorCode));
-            }
-
-            return new ConversionResult(operation, OperationStatus.Succeeded, "Преобразовано.");
-        }
-        catch (JsonException exception)
-        {
-            return new ConversionResult(
-                operation,
-                OperationStatus.Failed,
-                $"Некорректный JSON: {CreateJsonError(exception)}",
-                new ConversionDiagnostic("invalid_json"));
-        }
-        catch (IOException) when (File.Exists(operation.TargetPath) || Directory.Exists(operation.TargetPath))
-        {
-            return new ConversionResult(operation, OperationStatus.Conflict, "Файл результата уже существует.");
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            var message = File.Exists(operation.SourcePath)
-                ? "Не удалось записать результат."
-                : "Не удалось открыть исходный файл.";
-            return new ConversionResult(
-                operation,
-                OperationStatus.Failed,
-                message,
-                new ConversionDiagnostic(exception is UnauthorizedAccessException
-                    ? "access_denied"
-                    : "io_failure"));
-        }
-        finally
-        {
-            if (temporaryPath is not null)
+        return _executor.ExecuteAsync(
+            operation,
+            operation.Target,
+            async (temporaryOutput, token) =>
             {
                 try
                 {
-                    File.Delete(temporaryPath);
+                    var sourceText = await File.ReadAllTextAsync(
+                        operation.SourcePath,
+                        Encoding.UTF8,
+                        token);
+                    using var document = JsonDocument.Parse(sourceText);
+                    var normalizedJson = FormatJson(document);
+                    var content = operation.TargetExtension.Equals(
+                        ".md",
+                        StringComparison.OrdinalIgnoreCase)
+                        ? CreateMarkdown(Path.GetFileName(operation.SourcePath), normalizedJson)
+                        : normalizedJson;
+                    await File.WriteAllTextAsync(
+                        temporaryOutput,
+                        content,
+                        new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                        token);
+                    return new TemporaryOutputProductionResult(true);
                 }
-                catch (IOException)
+                catch (JsonException exception)
                 {
+                    return new TemporaryOutputProductionResult(
+                        false,
+                        "invalid_json",
+                        $"Некорректный JSON: {CreateJsonError(exception)}");
                 }
-            }
-        }
+            },
+            "Преобразовано.",
+            cancellationToken);
     }
 
     private static string CreateMarkdown(string fileName, string json)

@@ -13,6 +13,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly IFolderScanner _folderScanner;
     private readonly IConversionPlanner _conversionPlanner;
     private readonly IConversionProcessor _conversionProcessor;
+    private readonly IReadOnlyList<OfficeApplicationAvailability> _officeAvailability;
     private string _selectedFolder = string.Empty;
     private string _sourcePathError = string.Empty;
     private bool _includeSubfolders = true;
@@ -58,12 +59,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public MainWindowViewModel(
         IFolderScanner folderScanner,
         IConversionPlanner conversionPlanner,
-        IConversionProcessor? conversionProcessor = null)
+        IConversionProcessor? conversionProcessor = null,
+        IMicrosoftOfficeCapabilityDetector? officeCapabilityDetector = null)
     {
         _folderScanner = folderScanner;
         _conversionPlanner = conversionPlanner;
         _conversionProcessor = conversionProcessor
             ?? new ConversionProcessor(new DefaultConversionAdapterResolver());
+        _officeAvailability = (officeCapabilityDetector
+            ?? new MicrosoftOfficeCapabilityDetector()).Detect();
         PreviewFilters =
         [
             new(PreviewFilter.All, "Все"),
@@ -82,6 +86,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<OperationRowViewModel> Operations { get; } = [];
     public ObservableCollection<string> ErrorMessages { get; } = [];
     public IReadOnlyList<PreviewFilterOption> PreviewFilters { get; }
+    public string WordOfficeStatus => GetOfficeStatus(OfficeApplicationKind.Word);
+    public string ExcelOfficeStatus => GetOfficeStatus(OfficeApplicationKind.Excel);
+    public string PowerPointOfficeStatus => GetOfficeStatus(OfficeApplicationKind.PowerPoint);
 
     public IEnumerable<OperationRowViewModel> VisibleOperations =>
         Operations.Where(MatchesSelectedFilter).ToArray();
@@ -878,6 +885,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanConvert));
         OnPropertyChanged(nameof(CanChangeSettings));
     }
+
+    private string GetOfficeStatus(OfficeApplicationKind application) =>
+        _officeAvailability.Single(item => item.Application == application).StatusText;
 
     private void RefreshDefaultOutputPaths()
     {

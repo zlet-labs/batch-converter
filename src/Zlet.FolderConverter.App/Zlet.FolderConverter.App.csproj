@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Zlet.FolderConverter.Core\Zlet.FolderConverter.Core.csproj" />
+    <ProjectReference Include="..\Zlet.FolderConverter.OfficeWorker\Zlet.FolderConverter.OfficeWorker.csproj"
+                      ReferenceOutputAssembly="false" />
     <AssemblyMetadata Include="DisplayVersion" Value="$(ZletDisplayVersion)" />
     <AssemblyMetadata Include="PortablePackageName" Value="$(ZletPortablePackageName)" />
   </ItemGroup>
@@ -17,5 +19,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
   </PropertyGroup>
+
+  <Target Name="CopyOfficeWorkerToOutput"
+          AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <ItemGroup>
+      <OfficeWorkerOutput Include="$(MSBuildProjectDirectory)\..\Zlet.FolderConverter.OfficeWorker\bin\$(Configuration)\net8.0-windows\**\Zlet.FolderConverter.OfficeWorker.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(OfficeWorkerOutput)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>

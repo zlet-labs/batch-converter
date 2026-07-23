@@ -57,6 +57,14 @@ public sealed class FileSystemFolderScanner : IFolderScanner
                 [new ScanError(fullRootPath, "Selected folder does not exist.")]);
         }
 
+        if (IsReparseDirectory(fullRootPath))
+        {
+            return new ScanResult(
+                fullRootPath,
+                files,
+                [new ScanError(fullRootPath, "Selected folder is a reparse point.")]);
+        }
+
         var pending = new Stack<string>();
         pending.Push(fullRootPath);
 
@@ -69,7 +77,7 @@ public sealed class FileSystemFolderScanner : IFolderScanner
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (IsOfficeTemporaryFile(filePath))
+                if (IsTemporaryMicrosoftOfficeFile(filePath) || IsReparseFile(filePath))
                 {
                     continue;
                 }
@@ -138,18 +146,9 @@ public sealed class FileSystemFolderScanner : IFolderScanner
         }
     }
 
-    public static bool IsOfficeTemporaryFile(string filePath)
+    public static bool IsTemporaryMicrosoftOfficeFile(string filePath)
     {
         return Path.GetFileName(filePath).StartsWith("~$", StringComparison.Ordinal);
-    }
-
-    public static bool IsConvertedDirectory(string directoryPath, string rootPath)
-    {
-        var outputPath = Path.GetFullPath(Path.Combine(rootPath, ConvertedFolderName))
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var candidatePath = Path.GetFullPath(directoryPath)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return string.Equals(candidatePath, outputPath, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsExcludedDirectory(string directoryPath, string? excludedDirectory)
@@ -178,6 +177,18 @@ public sealed class FileSystemFolderScanner : IFolderScanner
         try
         {
             return (File.GetAttributes(directoryPath) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (Exception exception) when (IsRecoverableFileSystemException(exception))
+        {
+            return true;
+        }
+    }
+
+    public static bool IsReparseFile(string filePath)
+    {
+        try
+        {
+            return (File.GetAttributes(filePath) & FileAttributes.ReparsePoint) != 0;
         }
         catch (Exception exception) when (IsRecoverableFileSystemException(exception))
         {

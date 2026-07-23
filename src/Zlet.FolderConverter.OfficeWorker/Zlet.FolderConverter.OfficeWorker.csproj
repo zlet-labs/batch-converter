@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Zlet.FolderConverter.Core\Zlet.FolderConverter.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <AssemblyName>Zlet.FolderConverter.OfficeWorker</AssemblyName>
+    <RootNamespace>Zlet.FolderConverter.OfficeWorker</RootNamespace>
+    <RuntimeIdentifier>$(ZletPortableRuntimeIdentifier)</RuntimeIdentifier>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

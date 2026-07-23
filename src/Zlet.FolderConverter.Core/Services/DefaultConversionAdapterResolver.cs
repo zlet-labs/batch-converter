@@ -7,7 +7,16 @@ public sealed class DefaultConversionAdapterResolver : IConversionAdapterResolve
     private readonly IReadOnlyList<IConversionAdapter> _adapters;
 
     public DefaultConversionAdapterResolver()
-        : this(CreateDefaultAdapters())
+        : this(
+            new MicrosoftOfficeCapabilityDetector(),
+            new MicrosoftOfficeWorkerProcessRunner())
+    {
+    }
+
+    public DefaultConversionAdapterResolver(
+        IMicrosoftOfficeCapabilityDetector capabilityDetector,
+        IMicrosoftOfficeWorkerRunner workerRunner)
+        : this(CreateDefaultAdapters(capabilityDetector, workerRunner))
     {
     }
 
@@ -19,18 +28,33 @@ public sealed class DefaultConversionAdapterResolver : IConversionAdapterResolve
     public IConversionAdapter? Resolve(SourceFormat sourceFormat, ConversionTarget target) =>
         _adapters.FirstOrDefault(adapter => adapter.CanConvert(sourceFormat, target));
 
-    private static IConversionAdapter[] CreateDefaultAdapters()
+    private static IConversionAdapter[] CreateDefaultAdapters(
+        IMicrosoftOfficeCapabilityDetector capabilityDetector,
+        IMicrosoftOfficeWorkerRunner workerRunner)
     {
-        var options = new LibreOfficeConversionOptions();
         var validator = new OutputResultValidator();
         return
         [
             new JsonConversionAdapter(validator),
-            new LibreOfficeConversionAdapter(
-                new LibreOfficeRuntimeLocator(options),
-                new LibreOfficeProcessRunner(),
+            new SafeFileCopyAdapter(validator),
+            new MicrosoftOfficeConversionAdapter(
+                OfficeApplicationKind.Word,
+                capabilityDetector,
+                workerRunner,
                 validator,
-                options)
+                temporaryRoot: null),
+            new MicrosoftOfficeConversionAdapter(
+                OfficeApplicationKind.Excel,
+                capabilityDetector,
+                workerRunner,
+                validator,
+                temporaryRoot: null),
+            new MicrosoftOfficeConversionAdapter(
+                OfficeApplicationKind.PowerPoint,
+                capabilityDetector,
+                workerRunner,
+                validator,
+                temporaryRoot: null)
         ];
     }
 }

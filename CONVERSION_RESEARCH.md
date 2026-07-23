@@ -1,84 +1,70 @@
-# Conversion engine decision
+# Microsoft Office COM conversion notes
 
-## Decision for ZL-041
+Zlet Batch Converter v0.0.0 uses late-bound Microsoft Office COM automation.
+No `Microsoft.Office.Interop.*` package is referenced.
 
-Zlet Batch Converter uses a local bundled LibreOffice runtime for Office and
-OpenDocument conversion. LibreOffice is invoked only through
-`LibreOfficeConversionAdapter`, `ILibreOfficeRuntimeLocator`, and
-`ILibreOfficeProcessRunner`; UI and planning code do not know about
-`soffice.exe`.
+## Process boundary
 
-The application does not use Microsoft Office COM, a cloud service, a network
-runtime, or automatic downloads. The portable package keeps LibreOffice in
-`runtime/libreoffice` rather than attempting to embed it into one EXE.
+`Zlet.FolderConverter.OfficeWorker` is a separate .NET executable in the same
+solution. It reads one JSON request from redirected stdin, runs on an STA main
+thread, emits JSON lifecycle/result messages to stdout, and exits after one
+operation. The WPF process applies a timeout and remains responsive.
 
-## Why this architecture
+The worker obtains the application HWND and resolves its PID through
+`GetWindowThreadProcessId`. Before activation it records existing PIDs for the
+specific Office application. A PID is eligible for timeout termination only
+when it was absent from that baseline and its process name and start timestamp
+still match. The implementation never kills all `WINWORD`, `EXCEL`, or
+`POWERPNT` processes.
 
-- one engine covers legacy Office, OOXML, OpenDocument, and PDF output;
-- conversion stays on the user's machine;
-- a headless process can be isolated with a unique temporary user profile;
-- the adapter can be replaced later without changing rules, planner, or
-  ViewModel;
-- per-file process calls keep failures attributable and allow the batch to
-  continue.
+## Word
 
-## Safety implementation
+- `Visible = false`
+- `DisplayAlerts = 0`
+- `AutomationSecurity = 3` (`msoAutomationSecurityForceDisable`)
+- `Documents.Open`: `ReadOnly`, no Recent, hidden, no conversion/encoding dialog
+- `Document.SaveAs2`: `FileFormat = 16` (`wdFormatDocumentDefault`, DOCX)
 
-Each Office operation:
+References:
 
-1. resolves an explicit dev runtime or bundled
-   `runtime/libreoffice/program/soffice.com`, with `soffice.exe` as a
-   compatibility fallback;
-2. creates unique system-temp output and profile directories;
-3. starts LibreOffice hidden in headless mode with a timeout and cancellation;
-4. kills the process tree on timeout or cancellation;
-5. checks exit code and expected output;
-6. validates non-zero output, OOXML base ZIP parts, or PDF signature;
-7. verifies the source hash is unchanged;
-8. stages the validated file next to the final target and atomically publishes
-   it without overwrite;
-9. removes temporary output and profile data.
+- https://learn.microsoft.com/en-us/office/vba/api/word.documents.open
+- https://learn.microsoft.com/en-us/office/vba/api/word.saveas2
+- https://learn.microsoft.com/en-us/office/vba/api/word.wdsaveformat
 
-Command lines, document contents, stdout, and stderr are not shown to users or
-stored in logs. Diagnostics contain only a stable error code, optional exit
-code, and timeout/cancellation flags.
+## Excel
 
-## Licensing and release gate
+- `Visible = false`
+- `DisplayAlerts = false`
+- `AutomationSecurity = 3`
+- `AskToUpdateLinks = false`
+- `Workbooks.Open`: `UpdateLinks = 0`, read-only, no MRU, normal load
+- `Workbook.SaveAs`: `FileFormat = 51` (`xlOpenXMLWorkbook`, XLSX)
 
-LibreOffice's official licensing page says that an installation contains
-applicable LICENSE information and that included components can differ by
-version:
+References:
 
-- https://www.libreoffice.org/licenses/
+- https://learn.microsoft.com/en-us/office/vba/api/excel.workbooks.open
+- https://learn.microsoft.com/en-us/office/vba/api/excel.workbook.saveas
+- https://learn.microsoft.com/en-us/office/vba/api/excel.xlfileformat
 
-Official source information and release source archives:
+## PowerPoint
 
-- https://www.libreoffice.org/download-other/
-- https://download.documentfoundation.org/libreoffice/src/
+- `Visible = 0` (`msoFalse`)
+- `DisplayAlerts = 1` (`ppAlertsNone`)
+- `AutomationSecurity = 3`
+- `Presentations.Open`: read-only and without a window
+- `Presentation.SaveAs`: `FileFormat = 24`
+  (`ppSaveAsOpenXMLPresentation`, PPTX)
 
-The repository does not commit a LibreOffice distribution.
-`publish-portable.ps1` requires a real package, records its reported version,
-and copies that package's license/notice documents into the artifact. Packaging
-fails if this material cannot be confirmed. The locally verified ZL-041
-candidate used the official LibreOffice 26.2.4 Windows x86-64 package, reporting
-runtime version 26.2.4.2.
+References:
 
-Local verification executed 15 synthetic supported mappings. Outputs passed
-the application validators and a second LibreOffice open/export operation. The
-portable ZIP audit and extracted launch passed locally; no separate clean
-Windows machine or VM was available.
+- https://learn.microsoft.com/en-us/office/vba/api/powerpoint.presentations.open
+- https://learn.microsoft.com/en-us/office/vba/api/powerpoint.presentation.saveas
+- https://learn.microsoft.com/en-us/office/vba/api/powerpoint.ppsaveasfiletype
+- https://learn.microsoft.com/en-us/office/vba/api/powerpoint.ppalertlevel
+- https://learn.microsoft.com/en-us/office/vba/api/office.msoautomationsecurity
 
-No public release artifact is approved until the chosen build, its complete
-third-party documents, redistribution conditions, corresponding source
-availability, final ZIP contents, and clean-machine behavior have been manually
-reviewed.
+## Cleanup
 
-## Compatibility limits
-
-LibreOffice conversion is not a promise of pixel-perfect Microsoft Office
-fidelity. Macros, embedded objects, fonts, advanced charts, external links,
-password-protected files, and damaged documents can be unsupported or render
-differently. Output validation confirms container structure and signature, not
-visual equivalence.
-
-XLSX → CSV per sheet is intentionally outside ZL-041.
+Every path closes the document/workbook/presentation without saving the source,
+calls `Quit`, and releases COM objects in reverse order with
+`Marshal.FinalReleaseComObject`. `GC.Collect()` is not used for COM lifetime.

@@ -115,6 +115,40 @@ public sealed class FileSystemFolderScannerTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task ScanAsync_skips_reparse_file_when_supported()
+    {
+        var external = Path.Combine(
+            Path.GetTempPath(),
+            $"zlet-folder-converter-link-file-{Guid.NewGuid():N}.docx");
+        File.WriteAllText(external, "synthetic");
+        var link = Path.Combine(_rootPath, "linked.docx");
+        try
+        {
+            try
+            {
+                File.CreateSymbolicLink(link, external);
+            }
+            catch (Exception exception) when (exception is UnauthorizedAccessException
+                                               or IOException
+                                               or NotSupportedException)
+            {
+                return;
+            }
+
+            var result = await ScanAsync(includeSubfolders: false);
+
+            Assert.Empty(result.Files);
+        }
+        finally
+        {
+            if (File.Exists(external))
+            {
+                File.Delete(external);
+            }
+        }
+    }
+
     [Theory]
     [InlineData(false, 1)]
     [InlineData(true, 2)]

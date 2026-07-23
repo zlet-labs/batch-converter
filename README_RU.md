@@ -1,72 +1,45 @@
-# Zlet Batch Converter
+# Zlet Batch Converter v0.0.0
 
-`v0.0.0` pre-alpha — локальное Windows-приложение для массового преобразования
-файлов по правилам. Репозиторий пока намеренно называется `folder-converter`;
-его адрес остаётся `https://github.com/zlet-labs/folder-converter`.
-Переименование возможно только отдельно после review и merge PR #3.
+Zlet Batch Converter — локальный Windows-прототип для пакетной обработки файлов
+с сохранением относительной структуры подпапок. Файлы никуда не отправляются.
 
-Путь исходной папки можно ввести или вставить вручную либо выбрать через
-«Обзор». Сканирование запускается кнопкой или Enter. После scan пользователь
-настраивает правила и выбирает отдельные готовые операции. Доступны «Выбрать
-все», «Снять выбор», «Инвертировать» и фильтры, которые не сбрасывают выбор.
+## Поддерживаемые операции
 
-Результат сохраняется в выбранную папку или ZIP с сохранением относительной
-структуры подпапок. Оригиналы не перезаписываются, не удаляются, не перемещаются
-и намеренно не изменяются. Существующие targets и ZIP считаются конфликтами.
+| Исходник | Результат | Требование |
+|---|---|---|
+| `.doc` | `.docx` | установлен Microsoft Word |
+| `.xls` | `.xlsx` | установлен Microsoft Excel |
+| `.ppt` | `.pptx` | установлен Microsoft PowerPoint |
+| `.docx`, `.xlsx`, `.pptx` | безопасная копия без изменений | Office не нужен |
+| `.json` | `.txt` или `.md` | Office не нужен |
 
-## Правила преобразования
+Word, Excel и PowerPoint проверяются отдельно. Отсутствие одного приложения
+отключает только связанный с ним legacy-формат и не блокирует всю пачку.
+Microsoft Office в комплект не входит.
 
-| Исходный формат | Допустимые действия | По умолчанию |
-| --- | --- | --- |
-| JSON | TXT, Markdown, Не трогать | TXT |
-| DOC | DOCX, PDF, Не трогать | DOCX |
-| XLS | XLSX, PDF, Не трогать | XLSX |
-| PPT | PPTX, PDF, Не трогать | PPTX |
-| DOCX, XLSX, PPTX | PDF, Не трогать | Не трогать |
-| ODT | DOCX, PDF, Не трогать | Не трогать |
-| ODS | XLSX, PDF, Не трогать | Не трогать |
-| ODP | PPTX, PDF, Не трогать | Не трогать |
-| PDF, изображения, архивы, неизвестные | Не трогать | Не трогать |
+## Безопасность
 
-JSON обрабатывается встроенным adapter. Office и OpenDocument преобразует
-bundled LibreOffice в headless-режиме с изолированными временными профилями.
-OOXML и PDF проходят структурную проверку. Pixel-perfect совместимость не
-гарантируется. XLSX → CSV по листам не входит в ZL-041.
+- COM-автоматизация не выполняется в UI-процессе.
+- Одна операция запускается в отдельном STA worker-процессе .NET.
+- UI передаёт JSON через stdin без shell interpolation.
+- Legacy-файл открывается только для чтения; макросы, диалоги и добавление в
+  Recent/MRU отключены.
+- Исходник обязан находиться внутри выбранной исходной папки.
+- Reparse/symlink-файлы и reparse-папки пропускаются.
+- SHA-256 исходника проверяется до и после обработки.
+- Результат сначала создаётся во временной папке и проверяется как DOCX/XLSX/PPTX.
+- Финальная публикация выполняется атомарным перемещением; существующий файл или
+  каталог никогда не перезаписывается.
+- При timeout завершается worker и только тот Office PID, который подтверждён
+  как новый экземпляр этого worker. Завершения процессов по имени нет.
+- Ошибка одного файла не останавливает остальные.
 
-## Режимы результата
-
-- Папка: default `<source>\_converted`; разрешена другая отдельная подпапка или
-  внешний путь.
-- ZIP-архив: default
-  `<source>\ZletBatchConverter-v0.0.0-results.zip`; в архив входят только
-  успешно созданные выбранные результаты. При частичном успехе ZIP создаётся,
-  при нуле успешных файлов пустой ZIP не создаётся.
-
-Выбранная output-папка или точный output ZIP исключаются из следующих scan.
-Traversal, небезопасные ZIP entries, reparse escapes и перезапись запрещены.
-
-## Portable package
-
-```text
-ZletBatchConverter-v0.0.0-win-x64/
-  ZletBatchConverter.exe
-  runtime/
-    libreoffice/
-  licenses/
-  THIRD_PARTY_NOTICES.md
-  README_PORTABLE.txt
-```
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/publish-portable.ps1 `
-  -LibreOfficePath "C:\path\to\LibreOffice"
-```
-
-Пакет self-contained и не требует отдельно установленного .NET Runtime,
-Microsoft Office или LibreOffice. Binaries и generated artifacts не коммитятся.
-Первый public release не публикуется до ручного review.
+Техническая диагностика содержит только коды ошибок и служебные признаки, без
+содержимого документов, секретов и полных путей документов.
 
 ## Сборка и тесты
+
+Нужны Windows x64 и .NET 8 SDK:
 
 ```powershell
 dotnet restore FolderConverter.sln
@@ -74,14 +47,40 @@ dotnet build FolderConverter.sln -c Release
 dotnet test FolderConverter.sln -c Release
 ```
 
+Реальные Office integration tests запускаются только явно и требуют legacy
+фикстуры:
+
 ```powershell
-$env:ZLET_LIBREOFFICE_PATH = "C:\path\to\LibreOffice"
-dotnet test FolderConverter.sln -c Release --filter Category=LibreOfficeIntegration
+$env:ZLET_OFFICE_INTEGRATION = "1"
+$env:ZLET_OFFICE_WORD_FIXTURE = "C:\fixtures\sample.doc"
+$env:ZLET_OFFICE_EXCEL_FIXTURE = "C:\fixtures\sample.xls"
+$env:ZLET_OFFICE_POWERPOINT_FIXTURE = "C:\fixtures\sample.ppt"
+dotnet test FolderConverter.sln -c Release --filter Category=OfficeIntegration
 ```
 
-Проверенный runtime: официальный LibreOffice 26.2.4 Windows x86-64 (версия
-26.2.4.2). Проверяются 15 mappings: legacy Office → OOXML/PDF, modern Office →
-PDF и OpenDocument → OOXML/PDF.
+Если приложение Office или соответствующая фикстура отсутствует, тест
+пропускается, а не считается пройденным.
 
-Файлы остаются локально: cloud conversion, telemetry, analytics и runtime
-download отсутствуют. Фактические локальные пути нельзя коммитить или логировать.
+## Portable
+
+```powershell
+.\scripts\publish-portable.ps1
+```
+
+Скрипт создаёт self-contained .NET 8 пакет Windows x64 и ZIP:
+
+`artifacts/portable/win-x64/ZletBatchConverter-v0.0.0-win-x64.zip`
+
+В пакете нет Microsoft Office, Python, Java, исходников, тестов и локальных
+конфигов. GitHub Release до отдельного ревью и ручной проверки публиковать
+нельзя.
+
+## Ограничения
+
+Оригиналы не должны изменяться. Сложные, повреждённые, защищённые паролем или
+использующие неподдержанные возможности документы могут не преобразоваться.
+Результат зависит от установленной версии Office. Эта версия не обещает
+конвертацию на компьютере без соответствующего приложения Microsoft Office.
+
+Ручной чек-лист:
+[docs/manual-clean-machine-verification.md](docs/manual-clean-machine-verification.md).

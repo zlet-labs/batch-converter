@@ -9,9 +9,9 @@ public sealed class RuleSetTests
     [InlineData(SourceFormat.Doc, ConversionTarget.Docx)]
     [InlineData(SourceFormat.Xls, ConversionTarget.Xlsx)]
     [InlineData(SourceFormat.Ppt, ConversionTarget.Pptx)]
-    [InlineData(SourceFormat.Docx, ConversionTarget.Skip)]
-    [InlineData(SourceFormat.Xlsx, ConversionTarget.Skip)]
-    [InlineData(SourceFormat.Pptx, ConversionTarget.Skip)]
+    [InlineData(SourceFormat.Docx, ConversionTarget.Copy)]
+    [InlineData(SourceFormat.Xlsx, ConversionTarget.Copy)]
+    [InlineData(SourceFormat.Pptx, ConversionTarget.Copy)]
     [InlineData(SourceFormat.Odt, ConversionTarget.Skip)]
     [InlineData(SourceFormat.Ods, ConversionTarget.Skip)]
     [InlineData(SourceFormat.Odp, ConversionTarget.Skip)]
@@ -30,11 +30,11 @@ public sealed class RuleSetTests
     [InlineData(SourceFormat.Json, ConversionTarget.Txt)]
     [InlineData(SourceFormat.Json, ConversionTarget.Markdown)]
     [InlineData(SourceFormat.Doc, ConversionTarget.Docx)]
-    [InlineData(SourceFormat.Doc, ConversionTarget.Pdf)]
     [InlineData(SourceFormat.Xls, ConversionTarget.Xlsx)]
-    [InlineData(SourceFormat.Xls, ConversionTarget.Pdf)]
     [InlineData(SourceFormat.Ppt, ConversionTarget.Pptx)]
-    [InlineData(SourceFormat.Ppt, ConversionTarget.Pdf)]
+    [InlineData(SourceFormat.Docx, ConversionTarget.Copy)]
+    [InlineData(SourceFormat.Xlsx, ConversionTarget.Copy)]
+    [InlineData(SourceFormat.Pptx, ConversionTarget.Copy)]
     public void Rules_accept_required_mappings(SourceFormat source, ConversionTarget target)
     {
         var rules = RuleSet.CreateDefault().WithRule(source, target);
@@ -47,7 +47,7 @@ public sealed class RuleSetTests
     {
         var capability = FormatCapabilityCatalog.Get(SourceFormat.Xlsx);
 
-        Assert.Equal([ConversionTarget.Pdf, ConversionTarget.Skip], capability.AllowedTargets);
+        Assert.Equal([ConversionTarget.Copy, ConversionTarget.Skip], capability.AllowedTargets);
     }
 
     [Fact]

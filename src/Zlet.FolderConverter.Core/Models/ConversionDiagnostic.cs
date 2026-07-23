@@ -6,4 +6,5 @@ public sealed record ConversionDiagnostic(
     bool TimedOut = false,
     bool Cancelled = false,
     bool HasStandardOutput = false,
-    bool HasStandardError = false);
+    bool HasStandardError = false,
+    int? HResult = null);

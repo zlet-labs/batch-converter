@@ -16,13 +16,13 @@ public sealed class PresentationTests : IDisposable
     public PresentationTests() => Directory.CreateDirectory(_rootPath);
 
     [Theory]
-    [InlineData(OperationStatus.Ready, "Готов")]
+    [InlineData(OperationStatus.Ready, "Готово к преобразованию")]
     [InlineData(OperationStatus.Skipped, "Пропущен")]
     [InlineData(OperationStatus.Converting, "В процессе")]
-    [InlineData(OperationStatus.Succeeded, "Успешно")]
-    [InlineData(OperationStatus.Conflict, "Конфликт")]
+    [InlineData(OperationStatus.Succeeded, "Преобразовано")]
+    [InlineData(OperationStatus.Conflict, "Файл результата уже существует")]
     [InlineData(OperationStatus.Failed, "Ошибка")]
-    [InlineData(OperationStatus.EngineUnavailable, "Нет движка")]
+    [InlineData(OperationStatus.EngineUnavailable, "Требуется Microsoft Office")]
     [InlineData(OperationStatus.Unsupported, "Не поддерживается")]
     public void OperationRowViewModel_localizes_statuses(
         OperationStatus status,
@@ -66,10 +66,10 @@ public sealed class PresentationTests : IDisposable
 
         Assert.Equal(3, viewModel.FormatRules.Count);
         Assert.Equal(ConversionTarget.Txt, RuleFor(viewModel, SourceFormat.Json).SelectedTarget.Target);
-        Assert.Equal(ConversionTarget.Skip, RuleFor(viewModel, SourceFormat.Docx).SelectedTarget.Target);
+        Assert.Equal(ConversionTarget.Copy, RuleFor(viewModel, SourceFormat.Docx).SelectedTarget.Target);
         Assert.Equal(ConversionTarget.Skip, RuleFor(viewModel, SourceFormat.Pdf).SelectedTarget.Target);
-        Assert.Equal(1, viewModel.ReadyCount);
-        Assert.Equal(2, viewModel.SkippedCount);
+        Assert.Equal(2, viewModel.ReadyCount);
+        Assert.Equal(1, viewModel.SkippedCount);
     }
 
     [Fact]
@@ -253,7 +253,7 @@ public sealed class PresentationTests : IDisposable
         Assert.Equal(0, viewModel.FinalFailed);
         Assert.Equal(0, viewModel.FinalUnavailable);
         Assert.Equal(1, viewModel.FinalSkipped);
-        Assert.Equal("Успешно", viewModel.Operations.Single(row =>
+        Assert.Equal("Преобразовано", viewModel.Operations.Single(row =>
             row.Operation.SourceFormat == SourceFormat.Json).Status);
         Assert.True(File.Exists(Path.Combine(_rootPath, "_converted", "users.txt")));
         Assert.Equal(source, File.ReadAllText(Path.Combine(_rootPath, "users.json")));

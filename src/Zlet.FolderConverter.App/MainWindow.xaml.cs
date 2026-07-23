@@ -17,11 +17,16 @@ public partial class MainWindow : Window
         Title = $"{ProductIdentity.Name} v{ProductIdentity.Version}";
         Width = Math.Min(1280, SystemParameters.WorkArea.Width * 0.94);
         Height = Math.Min(780, SystemParameters.WorkArea.Height * 0.94);
-        var resolver = new DefaultConversionAdapterResolver();
+        var capabilityDetector = new MicrosoftOfficeCapabilityDetector();
+        var workerRunner = new MicrosoftOfficeWorkerProcessRunner();
+        var resolver = new DefaultConversionAdapterResolver(
+            capabilityDetector,
+            workerRunner);
         _viewModel = new MainWindowViewModel(
             new FileSystemFolderScanner(),
             new ConversionPlanner(resolver),
-            new ConversionProcessor(resolver));
+            new ConversionProcessor(resolver),
+            capabilityDetector);
         DataContext = _viewModel;
     }
 

@@ -45,7 +45,8 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
                 false,
                 OperationStatus.Skipped,
                 "Файл не будет изменён.",
-                targetRootPath);
+                targetRootPath,
+                sourceRootPath);
         }
 
         if (!FormatCapabilityCatalog.Get(file.Format).Supports(rule.Target))
@@ -58,10 +59,13 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
                 false,
                 OperationStatus.Unsupported,
                 "Выбранное преобразование не поддерживается.",
-                targetRootPath);
+                targetRootPath,
+                sourceRootPath);
         }
 
-        var targetExtension = rule.Target.ToExtension();
+        var targetExtension = rule.Target == ConversionTarget.Copy
+            ? Path.GetExtension(file.RelativePath)
+            : rule.Target.ToExtension();
         if (!OutputPathGuard.TryBuildTargetPath(
                 sourceRootPath,
                 targetRootPath,
@@ -78,7 +82,8 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
                 false,
                 OperationStatus.Failed,
                 "Недопустимый путь результата.",
-                targetRootPath);
+                targetRootPath,
+                sourceRootPath);
         }
 
         var adapter = adapterResolver.Resolve(file.Format, rule.Target);
@@ -94,7 +99,8 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
                 adapterAvailable,
                 OperationStatus.Conflict,
                 "Файл результата уже существует.",
-                targetRootPath);
+                targetRootPath,
+                sourceRootPath);
         }
 
         if (adapter is null)
@@ -107,26 +113,22 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
                 false,
                 OperationStatus.Unsupported,
                 "Выбранное преобразование не поддерживается.",
-                targetRootPath);
+                targetRootPath,
+                sourceRootPath);
         }
 
         if (!adapterAvailable)
         {
-            var status = FormatCapabilityCatalog.RequiresLibreOffice(file.Format, rule.Target)
-                ? OperationStatus.EngineUnavailable
-                : OperationStatus.Unsupported;
-            var message = status == OperationStatus.EngineUnavailable
-                ? "LibreOffice не найден в portable package."
-                : "Выбранное преобразование не поддерживается.";
             return Create(
                 file,
                 rule.Target,
                 targetExtension,
                 targetPath,
                 false,
-                status,
-                message,
-                targetRootPath);
+                OperationStatus.EngineUnavailable,
+                adapter.AvailabilityMessage,
+                targetRootPath,
+                sourceRootPath);
         }
 
         return Create(
@@ -136,8 +138,11 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
             targetPath,
             true,
             OperationStatus.Ready,
-            "Готово к преобразованию.",
-            targetRootPath);
+            rule.Target == ConversionTarget.Copy
+                ? "Будет скопирован без изменений."
+                : "Готово к преобразованию.",
+            targetRootPath,
+            sourceRootPath);
     }
 
     private static PlannedOperation Create(
@@ -148,7 +153,8 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
         bool adapterAvailable,
         OperationStatus status,
         string message,
-        string outputRootPath) =>
+        string outputRootPath,
+        string sourceRootPath) =>
         new(
             file.SourcePath,
             file.RelativePath,
@@ -159,5 +165,6 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
             adapterAvailable,
             status,
             message,
-            outputRootPath);
+            outputRootPath,
+            sourceRootPath);
 }

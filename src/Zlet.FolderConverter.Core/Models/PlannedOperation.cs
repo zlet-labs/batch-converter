@@ -10,7 +10,8 @@ public sealed record PlannedOperation(
     bool AdapterAvailable,
     OperationStatus Status,
     string Message,
-    string OutputRootPath = "")
+    string OutputRootPath = "",
+    string SourceRootPath = "")
 {
     public string TargetFormat => Target == ConversionTarget.Skip
         ? "Не трогать"

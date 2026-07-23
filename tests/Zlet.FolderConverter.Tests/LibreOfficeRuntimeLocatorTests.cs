@@ -80,6 +80,32 @@ public sealed class LibreOfficeRuntimeLocatorTests : IDisposable
     }
 
     [Fact]
+    public void Locate_prefers_console_launcher_for_synchronous_automation()
+    {
+        var runtime = Path.Combine(_rootPath, "runtime");
+        var program = Path.Combine(runtime, "program");
+        Directory.CreateDirectory(program);
+        var guiExecutable = Path.Combine(program, "soffice.exe");
+        var consoleExecutable = Path.Combine(program, "soffice.com");
+        File.WriteAllText(guiExecutable, "synthetic");
+        File.WriteAllText(consoleExecutable, "synthetic");
+
+        var fromDirectory = new LibreOfficeRuntimeLocator(
+            new LibreOfficeConversionOptions(),
+            Path.Combine(_rootPath, "app"),
+            () => runtime,
+            Path.Combine(_rootPath, "working")).Locate();
+        var fromGuiExecutable = new LibreOfficeRuntimeLocator(
+            new LibreOfficeConversionOptions(),
+            Path.Combine(_rootPath, "app"),
+            () => guiExecutable,
+            Path.Combine(_rootPath, "working")).Locate();
+
+        Assert.Equal(consoleExecutable, fromDirectory.ExecutablePath);
+        Assert.Equal(consoleExecutable, fromGuiExecutable.ExecutablePath);
+    }
+
+    [Fact]
     public void Locate_uses_system_installation_only_for_development_self_check()
     {
         var systemRuntime = Path.Combine(_rootPath, "system");

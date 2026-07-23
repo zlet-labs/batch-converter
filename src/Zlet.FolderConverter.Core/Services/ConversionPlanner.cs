@@ -7,14 +7,22 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
     public IReadOnlyList<PlannedOperation> CreatePlan(
         ScanResult scanResult,
         string rootPath,
+        RuleSet ruleSet) =>
+        CreatePlan(scanResult, rootPath, Path.Combine(Path.GetFullPath(rootPath), "_converted"), ruleSet);
+
+    public IReadOnlyList<PlannedOperation> CreatePlan(
+        ScanResult scanResult,
+        string sourceRootPath,
+        string outputRootPath,
         RuleSet ruleSet)
     {
         ArgumentNullException.ThrowIfNull(scanResult);
         ArgumentNullException.ThrowIfNull(ruleSet);
-        ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceRootPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputRootPath);
 
-        var fullRootPath = Path.GetFullPath(rootPath);
-        var targetRootPath = Path.Combine(fullRootPath, "_converted");
+        var fullRootPath = Path.GetFullPath(sourceRootPath);
+        var targetRootPath = Path.GetFullPath(outputRootPath);
 
         return scanResult.Files
             .Select(file => CreateOperation(file, fullRootPath, targetRootPath, ruleSet.GetRule(file.Format)))

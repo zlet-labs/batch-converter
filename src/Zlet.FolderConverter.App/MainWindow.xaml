@@ -3,8 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Zlet.FolderConverter.App"
         mc:Ignorable="d"
-        Title="Zlet Folder Converter"
+        Title="Zlet Batch Converter v0.0.0"
         Width="1280"
         Height="780"
         MinWidth="900"
@@ -54,9 +55,21 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="Zlet Folder Converter"
-                               FontSize="27"
-                               FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{x:Static local:ProductIdentity.Name}"
+                                   FontSize="27"
+                                   FontWeight="SemiBold" />
+                        <Border Margin="12,3,0,0"
+                                Padding="8,3"
+                                CornerRadius="8"
+                                Background="#4338CA"
+                                VerticalAlignment="Top">
+                            <TextBlock FontSize="12" FontWeight="Bold">
+                                <Run Text="PRE-ALPHA · v" />
+                                <Run Text="{x:Static local:ProductIdentity.Version}" />
+                            </TextBlock>
+                        </Border>
+                    </StackPanel>
                     <TextBlock Text="Массовое преобразование файлов в папках и подпапках"
                                Margin="0,4,0,0"
                                FontSize="14"
@@ -98,20 +111,26 @@
                                    FontWeight="Bold" />
                     </Border>
 
-                    <Border Grid.Column="1"
-                            Background="#AA0A1222"
-                            BorderBrush="{StaticResource BorderBrushSoft}"
-                            BorderThickness="1"
-                            CornerRadius="7"
-                            Height="42"
-                            Margin="0,0,10,0"
-                            Padding="11,0">
-                        <TextBlock Text="{Binding SelectedFolderDisplay}"
-                                   ToolTip="{Binding SelectedFolder}"
-                                   TextTrimming="CharacterEllipsis"
-                                   VerticalAlignment="Center"
-                                   Foreground="{StaticResource TextPrimaryBrush}" />
-                    </Border>
+                    <Grid Grid.Column="1" Margin="0,0,10,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBox Text="{Binding SelectedFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="{Binding SelectedFolder}"
+                                 Height="42"
+                                 Padding="11,0"
+                                 VerticalContentAlignment="Center"
+                                 IsEnabled="{Binding CanChangeSettings}"
+                                 KeyDown="SourcePathTextBox_KeyDown" />
+                        <TextBlock Grid.Row="1"
+                                   Text="{Binding SourcePathError}"
+                                   Foreground="#FF9AAA"
+                                   FontSize="12"
+                                   Margin="2,3,0,0"
+                                   Visibility="{Binding HasSourcePathError, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    </Grid>
 
                     <Button Grid.Column="2"
                             Content="Копировать"
@@ -257,6 +276,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
@@ -332,6 +352,37 @@
                         </Border>
 
                         <Border Grid.Row="2"
+                                Background="#470A1323"
+                                BorderBrush="#16243A"
+                                BorderThickness="0,0,0,1"
+                                Padding="14,7"
+                                Visibility="{Binding HasPreview, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <DockPanel>
+                                <TextBlock Text="{Binding SelectionSummary}"
+                                           VerticalAlignment="Center"
+                                           FontWeight="SemiBold"
+                                           Foreground="#70E4FF"
+                                           DockPanel.Dock="Right" />
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="Выбрать все"
+                                            Style="{StaticResource CompactButtonStyle}"
+                                            Margin="0,0,8,0"
+                                            IsEnabled="{Binding CanChangeSettings}"
+                                            Click="SelectAllButton_Click" />
+                                    <Button Content="Снять выбор"
+                                            Style="{StaticResource CompactButtonStyle}"
+                                            Margin="0,0,8,0"
+                                            IsEnabled="{Binding CanChangeSettings}"
+                                            Click="ClearSelectionButton_Click" />
+                                    <Button Content="Инвертировать"
+                                            Style="{StaticResource CompactButtonStyle}"
+                                            IsEnabled="{Binding CanChangeSettings}"
+                                            Click="InvertSelectionButton_Click" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <Border Grid.Row="3"
                                 Margin="12,10,12,0"
                                 Padding="14,10"
                                 CornerRadius="8"
@@ -361,7 +412,7 @@
                             </Grid>
                         </Border>
 
-                        <Grid Grid.Row="3">
+                        <Grid Grid.Row="4">
                             <TextBlock Text="{Binding EmptyStateMessage}"
                                        HorizontalAlignment="Center"
                                        VerticalAlignment="Center"
@@ -376,6 +427,16 @@
                                       BorderThickness="0"
                                       Visibility="{Binding HasPreview, Converter={StaticResource BoolToVisibilityConverter}}">
                                 <DataGrid.Columns>
+                                    <DataGridTemplateColumn Header="" Width="42">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                          IsEnabled="{Binding CanSelect}"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
                                     <DataGridTemplateColumn Header="Исходный файл" Width="1.5*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
@@ -432,7 +493,7 @@
                             </DataGrid>
                         </Grid>
 
-                        <Border Grid.Row="4"
+                        <Border Grid.Row="5"
                                 Margin="12"
                                 Padding="12"
                                 CornerRadius="8"
@@ -454,6 +515,7 @@
                                         <TextBlock Text="{Binding FinalConflicts, StringFormat=Конфликтов: {0}}" Margin="0,0,14,0" />
                                         <TextBlock Text="{Binding FinalUnavailable, StringFormat=Недоступно: {0}}" Margin="0,0,14,0" />
                                         <TextBlock Text="{Binding FinalSkipped, StringFormat=Пропущено: {0}}" />
+                                        <TextBlock Text="{Binding FinalNotSelected, StringFormat=Не выбрано: {0}}" Margin="14,0,0,0" />
                                     </WrapPanel>
                                     <TextBlock Text="{Binding ResultFolder}"
                                                ToolTip="{Binding ResultFolder}"
@@ -463,7 +525,7 @@
                                                Margin="0,4,0,0" />
                                 </StackPanel>
                                 <Button Grid.Column="1"
-                                        Content="Открыть папку результата"
+                                        Content="{Binding ResultActionText}"
                                         Style="{StaticResource SecondaryButtonStyle}"
                                         Margin="12,0,0,0"
                                         IsEnabled="{Binding CanOpenResult}"
@@ -480,51 +542,85 @@
                     Padding="14,10">
                 <Grid>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <Grid Visibility="{Binding ShowProgress, Converter={StaticResource BoolToVisibilityConverter}}">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <TextBlock Text="{Binding CurrentFile, StringFormat=Сейчас: {0}}"
-                                       TextTrimming="CharacterEllipsis"
-                                       FontSize="14"
-                                       Foreground="{StaticResource TextSecondaryBrush}" />
-                            <ProgressBar Grid.Row="1"
-                                         Height="6"
-                                         Margin="0,6,16,0"
+                    <ComboBox Width="130"
+                              ItemsSource="{Binding OutputModes}"
+                              SelectedItem="{Binding SelectedOutputModeOption}"
+                              IsEnabled="{Binding CanChangeSettings}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Grid Grid.Column="1" Margin="10,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBox Text="{Binding OutputPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="{Binding OutputPath}"
+                                 Height="42"
+                                 Padding="10,0"
+                                 VerticalContentAlignment="Center"
+                                 IsEnabled="{Binding CanChangeSettings}" />
+                        <TextBlock Grid.Row="1"
+                                   Text="{Binding OutputPathError}"
+                                   Foreground="#FF9AAA"
+                                   FontSize="12"
+                                   Margin="2,3,0,0"
+                                   Visibility="{Binding HasOutputPathError, Converter={StaticResource BoolToVisibilityConverter}}" />
+                        <Grid Grid.Row="2"
+                              Margin="2,5,0,0"
+                              Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ProgressBar Height="5"
+                                         VerticalAlignment="Center"
                                          Minimum="0"
                                          Maximum="100"
                                          Value="{Binding ProgressPercent, Mode=OneWay}" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding CurrentFile}"
+                                       ToolTip="{Binding CurrentFile}"
+                                       TextTrimming="CharacterEllipsis"
+                                       MaxWidth="240"
+                                       Margin="10,0,0,0"
+                                       FontSize="11"
+                                       Foreground="{StaticResource TextTertiaryBrush}" />
                         </Grid>
-                        <TextBlock Text="Оригиналы не изменяются · Результаты сохраняются в _converted"
-                                   Foreground="{StaticResource TextTertiaryBrush}"
-                                   FontSize="14"
-                                   Visibility="{Binding ShowProgress, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
-                        <ItemsControl ItemsSource="{Binding ErrorMessages}"
-                                      MaxHeight="34"
-                                      Margin="0,4,16,0"
-                                      Visibility="{Binding HasErrors, Converter={StaticResource BoolToVisibilityConverter}}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding}"
-                                               Foreground="#FF9AAA"
-                                               FontSize="14"
-                                               TextTrimming="CharacterEllipsis" />
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                    </Grid>
+                    <Button Grid.Column="2"
+                            Content="{Binding OutputBrowseButtonText}"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Margin="0,0,8,0"
+                            IsEnabled="{Binding CanChangeSettings}"
+                            Click="ChooseOutputButton_Click" />
+                    <Button Grid.Column="3"
+                            Content="Сбросить"
+                            Style="{StaticResource CompactButtonStyle}"
+                            Margin="0,0,10,0"
+                            IsEnabled="{Binding CanChangeSettings}"
+                            Click="ResetOutputButton_Click" />
+                    <StackPanel Grid.Column="4">
+                        <Button Content="{Binding ConvertButtonText}"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                MinWidth="205"
+                                IsEnabled="{Binding CanConvert}"
+                                Click="ConvertButton_Click" />
+                        <TextBlock Text="{Binding SelectionSummary}"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,4,0,0"
+                                   FontSize="12"
+                                   Foreground="{StaticResource TextTertiaryBrush}" />
                     </StackPanel>
-
-                    <Button Grid.Column="1"
-                            Content="{Binding ConvertButtonText}"
-                            Style="{StaticResource PrimaryButtonStyle}"
-                            MinWidth="205"
-                            IsEnabled="{Binding CanConvert}"
-                            Click="ConvertButton_Click" />
                 </Grid>
             </Border>
         </Grid>

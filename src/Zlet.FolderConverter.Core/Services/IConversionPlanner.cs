@@ -8,4 +8,11 @@ public interface IConversionPlanner
         ScanResult scanResult,
         string rootPath,
         RuleSet ruleSet);
+
+    IReadOnlyList<PlannedOperation> CreatePlan(
+        ScanResult scanResult,
+        string sourceRootPath,
+        string outputRootPath,
+        RuleSet ruleSet) =>
+        CreatePlan(scanResult, sourceRootPath, ruleSet);
 }

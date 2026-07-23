@@ -1,13 +1,10 @@
 param(
-    [string]$LibreOfficePath = "",
-    [string]$Version = ""
+    [string]$LibreOfficePath = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$portableRoot = Join-Path $repoRoot "artifacts\portable\win-x64"
-$appFolder = Join-Path $portableRoot "ZletFolderConverter"
 $projectPath = Join-Path $repoRoot "src\Zlet.FolderConverter.App\Zlet.FolderConverter.App.csproj"
 $readmePath = Join-Path $repoRoot "README_PORTABLE.txt"
 $licensePath = Join-Path $repoRoot "LICENSE"
@@ -17,6 +14,20 @@ $licensesDirectory = Join-Path $repoRoot "licenses"
 function Fail([string]$Message) {
     Write-Error $Message
     exit 1
+}
+
+function Get-ProjectProperty([string]$Name) {
+    $output = & dotnet msbuild $projectPath -nologo "-getProperty:$Name"
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Unable to read MSBuild property '$Name'."
+    }
+    $value = $output | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_)
+    } | Select-Object -Last 1
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        Fail "MSBuild property '$Name' is empty."
+    }
+    return $value.Trim()
 }
 
 function Resolve-LibreOfficeRuntime([string]$Candidate) {
@@ -94,6 +105,12 @@ function Copy-PackageDocuments(
     }
 }
 
+$runtimeIdentifier = Get-ProjectProperty "ZletPortableRuntimeIdentifier"
+$packageName = Get-ProjectProperty "ZletPortablePackageName"
+$executableName = Get-ProjectProperty "ZletExecutableName"
+$portableRoot = Join-Path $repoRoot "artifacts\portable\$runtimeIdentifier"
+$appFolder = Join-Path $portableRoot $packageName
+
 $sdks = & dotnet --list-sdks
 if ($LASTEXITCODE -ne 0 -or -not ($sdks -match "^8\.")) {
     Fail ".NET 8 SDK is required to publish the portable package."
@@ -131,7 +148,7 @@ New-Item -ItemType Directory -Force -Path $appFolder | Out-Null
 
 dotnet publish $projectPath `
     -c Release `
-    -r win-x64 `
+    -r $runtimeIdentifier `
     --self-contained true `
     -p:PublishSingleFile=false `
     -p:PublishTrimmed=false `
@@ -176,16 +193,11 @@ Set-Content -LiteralPath $sourceInfoFile -Encoding UTF8 -Value @(
     "license documents copied from the selected runtime package."
 )
 
-$zipName = if ([string]::IsNullOrWhiteSpace($Version)) {
-    "ZletFolderConverter-win-x64-portable.zip"
-} else {
-    $safeVersion = $Version -replace "[^0-9A-Za-z._-]", "-"
-    "ZletFolderConverter-$safeVersion-win-x64-portable.zip"
-}
+$zipName = "$packageName.zip"
 $zipPath = Join-Path $portableRoot $zipName
 
 $requiredOutputs = @(
-    (Join-Path $appFolder "ZletFolderConverter.exe"),
+    (Join-Path $appFolder "$executableName.exe"),
     (Join-Path $runtimeDestination "program\soffice.exe"),
     (Join-Path $appFolder "licenses"),
     (Join-Path $appFolder "THIRD_PARTY_NOTICES.md"),
@@ -198,15 +210,27 @@ foreach ($requiredOutput in $requiredOutputs) {
 }
 
 $forbiddenDirectories = Get-ChildItem -LiteralPath $appFolder -Recurse -Directory |
-    Where-Object { $_.Name -in @("bin", "obj", "fixtures", "test-fixtures") }
+    Where-Object {
+        $_.Name -in @("bin", "obj", "fixtures", "test-fixtures") -and
+        -not $_.FullName.StartsWith(
+            $runtimeDestination + [System.IO.Path]::DirectorySeparatorChar,
+            [System.StringComparison]::OrdinalIgnoreCase)
+    }
 if ($forbiddenDirectories) {
     Fail "Portable package validation failed: build or test directories are present."
 }
 
 $forbiddenFiles = Get-ChildItem -LiteralPath $appFolder -Recurse -File |
     Where-Object {
-        $_.Extension -in @(".cs", ".csproj", ".sln", ".pfx", ".pem", ".key") -or
-        $_.Name -match "\.(user|suo)$"
+        $isLibreOfficeCertificateBundle =
+            $_.Name.Equals("cacert.pem", [System.StringComparison]::OrdinalIgnoreCase) -and
+            $_.FullName.StartsWith(
+                $runtimeDestination + [System.IO.Path]::DirectorySeparatorChar,
+                [System.StringComparison]::OrdinalIgnoreCase)
+        -not $isLibreOfficeCertificateBundle -and (
+            $_.Extension -in @(".cs", ".csproj", ".sln", ".pfx", ".pem", ".key") -or
+            $_.Name -match "\.(user|suo)$"
+        )
     }
 if ($forbiddenFiles) {
     Fail "Portable package validation failed: source, test, or secret-bearing files are present."
@@ -230,7 +254,13 @@ foreach ($textFile in $ownedTextFiles) {
     }
 }
 
-Compress-Archive -LiteralPath $appFolder -DestinationPath $zipPath -Force
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    $appFolder,
+    $zipPath,
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $true
+)
 if (-not (Test-Path -LiteralPath $zipPath) -or
     (Get-Item -LiteralPath $zipPath).Length -le 0) {
     Fail "Portable ZIP was not created."

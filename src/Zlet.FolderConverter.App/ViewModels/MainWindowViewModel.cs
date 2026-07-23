@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
+using Zlet.FolderConverter.App;
 using Zlet.FolderConverter.Core.Models;
 using Zlet.FolderConverter.Core.Services;
 
@@ -13,6 +14,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly IConversionPlanner _conversionPlanner;
     private readonly IConversionProcessor _conversionProcessor;
     private string _selectedFolder = string.Empty;
+    private string _sourcePathError = string.Empty;
     private bool _includeSubfolders = true;
     private bool _isScanning;
     private bool _isConverting;
@@ -24,6 +26,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private PreviewFilterOption _selectedPreviewFilter;
     private int _foundCount;
     private int _readyCount;
+    private int _selectedReadyCount;
     private int _skippedCount;
     private int _unavailableCount;
     private int _conflictCount;
@@ -36,7 +39,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private int _finalConflicts;
     private int _finalUnavailable;
     private int _finalSkipped;
+    private int _finalNotSelected;
     private string _resultFolder = string.Empty;
+    private OutputMode _selectedOutputMode;
+    private string _outputPath = string.Empty;
+    private string _folderOutputPath = string.Empty;
+    private string _zipOutputPath = string.Empty;
+    private string _outputPathError = string.Empty;
+    private bool _folderOutputEdited;
+    private bool _zipOutputEdited;
+    private bool _applyingOutputDefault;
+    private readonly string _zipStagingRoot = Path.Combine(
+        Path.GetTempPath(),
+        "ZletBatchConverter",
+        "result-staging",
+        Guid.NewGuid().ToString("N"));
 
     public MainWindowViewModel(
         IFolderScanner folderScanner,
@@ -78,6 +95,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             {
                 OnPropertyChanged(nameof(SelectedFolderDisplay));
                 OnPropertyChanged(nameof(CanCopySelectedFolder));
+                UpdateSourcePathError();
+                RefreshDefaultOutputPaths();
                 InvalidateScan("Папка изменена. Нажмите «Найти файлы».");
                 NotifyAvailability();
             }
@@ -86,6 +105,116 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public string SelectedFolderDisplay => PathDisplayFormatter.Format(SelectedFolder);
     public bool CanCopySelectedFolder => !string.IsNullOrWhiteSpace(SelectedFolder);
+    public string SourcePathError
+    {
+        get => _sourcePathError;
+        private set
+        {
+            if (SetProperty(ref _sourcePathError, value))
+            {
+                OnPropertyChanged(nameof(HasSourcePathError));
+            }
+        }
+    }
+    public bool HasSourcePathError => !string.IsNullOrWhiteSpace(SourcePathError);
+
+    public IReadOnlyList<OutputModeOption> OutputModes { get; } =
+        [new(OutputMode.Folder, "Папка"), new(OutputMode.Zip, "ZIP-архив")];
+
+    public OutputModeOption SelectedOutputModeOption
+    {
+        get => OutputModes.Single(option => option.Mode == SelectedOutputMode);
+        set
+        {
+            if (value is not null)
+            {
+                SelectedOutputMode = value.Mode;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public OutputMode SelectedOutputMode
+    {
+        get => _selectedOutputMode;
+        set
+        {
+            if (!SetProperty(ref _selectedOutputMode, value))
+            {
+                return;
+            }
+
+            ApplyCurrentModePath();
+            HasFinalReport = false;
+            if (_lastScan is not null)
+            {
+                RebuildPreview();
+            }
+            OnPropertyChanged(nameof(OutputModeLabel));
+            OnPropertyChanged(nameof(OutputBrowseButtonText));
+            OnPropertyChanged(nameof(ResultActionText));
+            OnPropertyChanged(nameof(SelectedOutputModeOption));
+        }
+    }
+
+    public string OutputModeLabel => SelectedOutputMode == OutputMode.Folder
+        ? "Папка"
+        : "ZIP-архив";
+
+    public string OutputBrowseButtonText => SelectedOutputMode == OutputMode.Folder
+        ? "Выбрать папку"
+        : "Выбрать ZIP";
+
+    public string OutputPath
+    {
+        get => _outputPath;
+        set
+        {
+            if (!SetProperty(ref _outputPath, value))
+            {
+                return;
+            }
+
+            if (SelectedOutputMode == OutputMode.Folder)
+            {
+                _folderOutputPath = value;
+                if (!_applyingOutputDefault)
+                {
+                    _folderOutputEdited = true;
+                }
+            }
+            else
+            {
+                _zipOutputPath = value;
+                if (!_applyingOutputDefault)
+                {
+                    _zipOutputEdited = true;
+                }
+            }
+
+            ValidateOutputPath();
+            HasFinalReport = false;
+            if (_lastScan is not null && SelectedOutputMode == OutputMode.Folder)
+            {
+                RebuildPreview();
+            }
+            NotifyAvailability();
+        }
+    }
+
+    public string OutputPathError
+    {
+        get => _outputPathError;
+        private set
+        {
+            if (SetProperty(ref _outputPathError, value))
+            {
+                OnPropertyChanged(nameof(HasOutputPathError));
+            }
+        }
+    }
+
+    public bool HasOutputPathError => !string.IsNullOrWhiteSpace(OutputPathError);
 
     public bool IncludeSubfolders
     {
@@ -137,8 +266,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     public bool IsBusy => IsScanning || IsConverting;
-    public bool CanScan => !IsBusy && Directory.Exists(SelectedFolder);
-    public bool CanConvert => !IsBusy && ReadyCount > 0;
+    public bool CanScan => !IsBusy && Directory.Exists(NormalizePathInput(SelectedFolder));
+    public bool CanConvert => !IsBusy
+                              && SelectedReadyCount > 0
+                              && !HasOutputPathError
+                              && !string.IsNullOrWhiteSpace(OutputPath);
     public bool CanChangeSettings => !IsBusy;
     public bool HasRules => FormatRules.Count > 0;
     public bool HasPreview => Operations.Count > 0;
@@ -146,7 +278,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public bool HasEngineUnavailable => Operations.Any(
         row => row.Operation.Status == OperationStatus.EngineUnavailable);
     public bool ShowProgress => IsConverting;
-    public bool CanOpenResult => Directory.Exists(ResultFolder);
+    public bool CanOpenResult => SelectedOutputMode == OutputMode.Folder
+        ? Directory.Exists(ResultFolder)
+        : File.Exists(ResultFolder);
+    public string ResultActionText => SelectedOutputMode == OutputMode.Folder
+        ? "Открыть папку результата"
+        : "Показать ZIP в проводнике";
 
     public int FoundCount
     {
@@ -166,6 +303,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
         }
     }
+
+    public int SelectedReadyCount
+    {
+        get => _selectedReadyCount;
+        private set
+        {
+            if (SetProperty(ref _selectedReadyCount, value))
+            {
+                OnPropertyChanged(nameof(CanConvert));
+                OnPropertyChanged(nameof(ConvertButtonText));
+                OnPropertyChanged(nameof(SelectionSummary));
+            }
+        }
+    }
+
+    public int SelectableCount => Operations.Count(row => row.CanSelect);
+    public string SelectionSummary => $"Выбрано: {SelectedReadyCount} из {SelectableCount}";
 
     public int SkippedCount
     {
@@ -191,8 +345,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _errorCount, value);
     }
 
-    public string ConvertButtonText =>
-        $"Преобразовать {ReadyCount} {GetRussianFileWord(ReadyCount)}";
+    public string ConvertButtonText => SelectedReadyCount == 0
+        ? "Выберите файлы"
+        : $"Преобразовать {SelectedReadyCount} {GetRussianFileWord(SelectedReadyCount)}";
 
     public static string GetRussianFileWord(int count)
     {
@@ -271,6 +426,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _finalSkipped, value);
     }
 
+    public int FinalNotSelected
+    {
+        get => _finalNotSelected;
+        private set => SetProperty(ref _finalNotSelected, value);
+    }
+
     public string ResultFolder
     {
         get => _resultFolder;
@@ -285,14 +446,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public async Task ScanAsync(CancellationToken cancellationToken = default)
     {
-        var selectedFolder = SelectedFolder;
+        var selectedFolder = NormalizePathInput(SelectedFolder);
         var includeSubfolders = IncludeSubfolders;
         if (!Directory.Exists(selectedFolder))
         {
+            SourcePathError = "Папка не существует или недоступна.";
             StateMessage = "Выбранная папка недоступна.";
             return;
         }
 
+        if (!string.Equals(SelectedFolder, selectedFolder, StringComparison.Ordinal))
+        {
+            _selectedFolder = selectedFolder;
+            OnPropertyChanged(nameof(SelectedFolder));
+            OnPropertyChanged(nameof(SelectedFolderDisplay));
+            OnPropertyChanged(nameof(CanCopySelectedFolder));
+        }
+        SourcePathError = string.Empty;
         IsScanning = true;
         StateMessage = "Ищем файлы...";
         EmptyStateMessage = "Ищем файлы...";
@@ -300,9 +470,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         try
         {
+            var excludedDirectory = SelectedOutputMode == OutputMode.Folder
+                ? NormalizePathInput(OutputPath)
+                : null;
+            var excludedFile = SelectedOutputMode == OutputMode.Zip
+                ? NormalizePathInput(OutputPath)
+                : null;
             var scanResult = await _folderScanner.ScanAsync(
                 selectedFolder,
                 includeSubfolders,
+                excludedDirectory,
+                excludedFile,
                 cancellationToken);
             _lastScan = scanResult;
             _scanRoot = selectedFolder;
@@ -343,10 +521,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public async Task ConvertAsync(CancellationToken cancellationToken = default)
     {
-        var operations = Operations.Select(row => row.Operation).ToArray();
-        if (!operations.Any(operation => operation.Status == OperationStatus.Ready))
+        var originalRows = Operations.ToArray();
+        var selectedRows = originalRows
+            .Where(row => row.CanSelect && row.IsSelected)
+            .ToArray();
+        var operations = selectedRows.Select(row => row.Operation).ToArray();
+        if (operations.Length == 0)
         {
             return;
+        }
+
+        ValidateOutputPath();
+        if (HasOutputPathError)
+        {
+            StateMessage = "Проверьте путь результата.";
+            return;
+        }
+
+        if (SelectedOutputMode == OutputMode.Zip)
+        {
+            TryDeleteZipStaging();
         }
 
         IsConverting = true;
@@ -362,9 +556,45 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 operations,
                 progress,
                 cancellationToken);
-            Operations.Clear();
-            foreach (var result in summary.Results)
+            if (SelectedOutputMode == OutputMode.Zip)
             {
+                try
+                {
+                    var zipResult = await new ResultZipPublisher().PublishAsync(
+                        _zipStagingRoot,
+                        NormalizePathInput(OutputPath),
+                        summary,
+                        cancellationToken);
+                    if (!zipResult.Created)
+                    {
+                        AddError(zipResult.ErrorCode == "no_successful_outputs"
+                            ? "ZIP не создан: нет успешно преобразованных файлов."
+                            : "Не удалось безопасно создать ZIP результата.");
+                    }
+                }
+                catch (Exception exception) when (exception is IOException
+                                                   or InvalidDataException
+                                                   or UnauthorizedAccessException)
+                {
+                    AddError("Не удалось безопасно создать ZIP результата.");
+                }
+            }
+            var resultsBySource = summary.Results.ToDictionary(
+                result => result.Operation.SourcePath,
+                StringComparer.OrdinalIgnoreCase);
+            Operations.Clear();
+            foreach (var row in originalRows)
+            {
+                if (!resultsBySource.TryGetValue(row.Operation.SourcePath, out var result))
+                {
+                    Operations.Add(new OperationRowViewModel(
+                        row.Operation,
+                        isSelected: false,
+                        isNotSelected: row.Operation.Status == OperationStatus.Ready,
+                        selectionChanged: SelectionChanged));
+                    continue;
+                }
+
                 var completedOperation = result.Operation with
                 {
                     Status = result.Status,
@@ -372,7 +602,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 };
                 Operations.Add(new OperationRowViewModel(
                     completedOperation,
-                    result with { Operation = completedOperation }));
+                    result with { Operation = completedOperation },
+                    isSelected: false,
+                    selectionChanged: SelectionChanged));
                 if (result.Status == OperationStatus.Failed)
                 {
                     AddError($"{result.Operation.RelativePath}: {result.Message}");
@@ -382,10 +614,22 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             UpdatePreviewSummary();
             FinalSucceeded = summary.Succeeded;
             FinalFailed = summary.Failed;
-            FinalConflicts = summary.Conflicts;
-            FinalUnavailable = summary.EngineUnavailable + summary.Unsupported;
-            FinalSkipped = summary.Skipped;
-            ResultFolder = Path.Combine(_scanRoot, "_converted");
+            var unprocessedRows = originalRows.Where(row =>
+                !resultsBySource.ContainsKey(row.Operation.SourcePath)).ToArray();
+            FinalConflicts = summary.Conflicts + unprocessedRows.Count(row =>
+                row.Operation.Status == OperationStatus.Conflict);
+            FinalUnavailable = summary.EngineUnavailable + summary.Unsupported
+                               + unprocessedRows.Count(row => row.Operation.Status is
+                                   OperationStatus.EngineUnavailable or OperationStatus.Unsupported);
+            FinalSkipped = summary.Skipped + unprocessedRows.Count(row =>
+                row.Operation.Status == OperationStatus.Skipped);
+            FinalNotSelected = unprocessedRows.Count(row =>
+                row.Operation.Status == OperationStatus.Ready && !row.IsSelected);
+            ResultFolder = SelectedOutputMode == OutputMode.Folder
+                ? NormalizePathInput(OutputPath)
+                : File.Exists(NormalizePathInput(OutputPath))
+                    ? NormalizePathInput(OutputPath)
+                    : string.Empty;
             HasFinalReport = true;
             StateMessage = "Пакетная обработка завершена.";
             OnPropertyChanged(nameof(VisibleOperations));
@@ -399,6 +643,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
         finally
         {
+            if (SelectedOutputMode == OutputMode.Zip)
+            {
+                TryDeleteZipStaging();
+            }
             IsConverting = false;
             CurrentFile = string.Empty;
         }
@@ -408,6 +656,47 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         ErrorMessages.Add(message);
         OnPropertyChanged(nameof(HasErrors));
+    }
+
+    public void SelectAll()
+    {
+        foreach (var row in Operations.Where(row => row.CanSelect))
+        {
+            row.IsSelected = true;
+        }
+        SelectionChanged();
+    }
+
+    public void ClearSelection()
+    {
+        foreach (var row in Operations.Where(row => row.CanSelect))
+        {
+            row.IsSelected = false;
+        }
+        SelectionChanged();
+    }
+
+    public void InvertSelection()
+    {
+        foreach (var row in Operations.Where(row => row.CanSelect))
+        {
+            row.IsSelected = !row.IsSelected;
+        }
+        SelectionChanged();
+    }
+
+    public void ResetOutputPath()
+    {
+        if (SelectedOutputMode == OutputMode.Folder)
+        {
+            _folderOutputEdited = false;
+        }
+        else
+        {
+            _zipOutputEdited = false;
+        }
+
+        ApplyDefaultForCurrentMode();
     }
 
     private void ChangeRule(SourceFormat sourceFormat, ConversionTarget target)
@@ -425,12 +714,30 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void RebuildPreview()
     {
+        var previousSelection = Operations
+            .Where(row => row.CanSelect)
+            .ToDictionary(
+                row => row.Operation.SourcePath,
+                row => row.IsSelected,
+                StringComparer.OrdinalIgnoreCase);
         Operations.Clear();
         if (_lastScan is not null)
         {
-            foreach (var operation in _conversionPlanner.CreatePlan(_lastScan, _scanRoot, _ruleSet))
+            var outputRoot = SelectedOutputMode == OutputMode.Folder
+                ? NormalizePathInput(OutputPath)
+                : _zipStagingRoot;
+            foreach (var operation in _conversionPlanner.CreatePlan(
+                         _lastScan,
+                         _scanRoot,
+                         outputRoot,
+                         _ruleSet))
             {
-                Operations.Add(new OperationRowViewModel(operation));
+                Operations.Add(new OperationRowViewModel(
+                    operation,
+                    isSelected: operation.Status == OperationStatus.Ready
+                        && (!previousSelection.TryGetValue(operation.SourcePath, out var selected)
+                            || selected),
+                    selectionChanged: SelectionChanged));
             }
         }
 
@@ -446,11 +753,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         FoundCount = Operations.Count;
         ReadyCount = Operations.Count(row => row.Operation.Status is
             OperationStatus.Ready or OperationStatus.Converting);
+        SelectedReadyCount = Operations.Count(row => row.CanSelect && row.IsSelected);
         SkippedCount = Operations.Count(row => row.Operation.Status == OperationStatus.Skipped);
         UnavailableCount = Operations.Count(row => row.Operation.Status is
             OperationStatus.EngineUnavailable or OperationStatus.Unsupported);
         ConflictCount = Operations.Count(row => row.Operation.Status == OperationStatus.Conflict);
         ErrorCount = Operations.Count(row => row.Operation.Status == OperationStatus.Failed);
+        OnPropertyChanged(nameof(SelectableCount));
+        OnPropertyChanged(nameof(SelectionSummary));
         OnPropertyChanged(nameof(HasEngineUnavailable));
         NotifyAvailability();
     }
@@ -541,6 +851,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ErrorMessages.Clear();
         FoundCount = 0;
         ReadyCount = 0;
+        SelectedReadyCount = 0;
         SkippedCount = 0;
         UnavailableCount = 0;
         ConflictCount = 0;
@@ -551,6 +862,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         FinalConflicts = 0;
         FinalUnavailable = 0;
         FinalSkipped = 0;
+        FinalNotSelected = 0;
         ResultFolder = string.Empty;
         OnPropertyChanged(nameof(HasRules));
         OnPropertyChanged(nameof(HasPreview));
@@ -565,6 +877,151 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanScan));
         OnPropertyChanged(nameof(CanConvert));
         OnPropertyChanged(nameof(CanChangeSettings));
+    }
+
+    private void RefreshDefaultOutputPaths()
+    {
+        var source = NormalizePathInput(SelectedFolder);
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return;
+        }
+
+        if (!_folderOutputEdited)
+        {
+            _folderOutputPath = Path.Combine(source, "_converted");
+        }
+
+        if (!_zipOutputEdited)
+        {
+            _zipOutputPath = Path.Combine(source, ProductIdentity.ResultZipFileName);
+        }
+
+        ApplyCurrentModePath();
+    }
+
+    private void ApplyDefaultForCurrentMode()
+    {
+        var source = NormalizePathInput(SelectedFolder);
+        var value = SelectedOutputMode == OutputMode.Folder
+            ? Path.Combine(source, "_converted")
+            : Path.Combine(source, ProductIdentity.ResultZipFileName);
+        if (SelectedOutputMode == OutputMode.Folder)
+        {
+            _folderOutputPath = value;
+        }
+        else
+        {
+            _zipOutputPath = value;
+        }
+
+        SetOutputPathWithoutMarkingEdited(value);
+    }
+
+    private void ApplyCurrentModePath()
+    {
+        var value = SelectedOutputMode == OutputMode.Folder
+            ? _folderOutputPath
+            : _zipOutputPath;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            ApplyDefaultForCurrentMode();
+            return;
+        }
+
+        SetOutputPathWithoutMarkingEdited(value);
+    }
+
+    private void SetOutputPathWithoutMarkingEdited(string value)
+    {
+        _applyingOutputDefault = true;
+        try
+        {
+            OutputPath = value;
+        }
+        finally
+        {
+            _applyingOutputDefault = false;
+        }
+    }
+
+    private void ValidateOutputPath()
+    {
+        var source = NormalizePathInput(SelectedFolder);
+        var output = NormalizePathInput(OutputPath);
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            OutputPathError = string.Empty;
+            return;
+        }
+
+        var validation = SelectedOutputMode == OutputMode.Folder
+            ? OutputPathGuard.ValidateFolderDestination(source, output)
+            : OutputPathGuard.ValidateZipDestination(source, output, _zipStagingRoot);
+        OutputPathError = validation.IsValid
+            ? string.Empty
+            : validation.ErrorCode switch
+            {
+                "output_equals_source" => "Папка результата не может совпадать с исходной.",
+                "output_is_source_parent" => "Папка результата не может быть родителем исходной.",
+                "output_is_file" => "На месте папки результата существует файл.",
+                "zip_target_conflict" => "ZIP результата уже существует и не будет перезаписан.",
+                "zip_extension_required" => "Путь ZIP должен оканчиваться на .zip.",
+                _ => "Путь результата недоступен или небезопасен."
+            };
+    }
+
+    private void TryDeleteZipStaging()
+    {
+        try
+        {
+            var expectedRoot = Path.GetFullPath(Path.Combine(
+                Path.GetTempPath(),
+                "ZletBatchConverter",
+                "result-staging"));
+            var staging = Path.GetFullPath(_zipStagingRoot);
+            if (staging.StartsWith(
+                    expectedRoot + Path.DirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase)
+                && Directory.Exists(staging))
+            {
+                Directory.Delete(staging, recursive: true);
+            }
+        }
+        catch (Exception exception) when (exception is IOException
+                                           or UnauthorizedAccessException
+                                           or ArgumentException)
+        {
+        }
+    }
+
+    private void SelectionChanged()
+    {
+        SelectedReadyCount = Operations.Count(row => row.CanSelect && row.IsSelected);
+        OnPropertyChanged(nameof(SelectableCount));
+        OnPropertyChanged(nameof(SelectionSummary));
+        NotifyAvailability();
+    }
+
+    private void UpdateSourcePathError()
+    {
+        var normalized = NormalizePathInput(SelectedFolder);
+        SourcePathError = string.IsNullOrWhiteSpace(normalized) || Directory.Exists(normalized)
+            ? string.Empty
+            : "Папка не существует или недоступна.";
+    }
+
+    public static string NormalizePathInput(string? value)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+        if (normalized.Length >= 2
+            && normalized[0] == '"'
+            && normalized[^1] == '"')
+        {
+            normalized = normalized[1..^1].Trim();
+        }
+
+        return normalized;
     }
 
     private bool SetProperty<T>(ref T storage, T value, [CallerMemberName] string? propertyName = null)

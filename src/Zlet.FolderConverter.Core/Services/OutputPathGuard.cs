@@ -2,6 +2,100 @@ namespace Zlet.FolderConverter.Core.Services;
 
 public static class OutputPathGuard
 {
+    public static OutputDestinationValidation ValidateFolderDestination(
+        string sourceRootPath,
+        string outputRootPath)
+    {
+        if (string.IsNullOrWhiteSpace(sourceRootPath) || string.IsNullOrWhiteSpace(outputRootPath))
+        {
+            return new(false, "output_path_missing");
+        }
+
+        try
+        {
+            var sourceRoot = NormalizeDirectory(sourceRootPath);
+            var outputRoot = NormalizeDirectory(outputRootPath);
+            if (string.Equals(sourceRoot, outputRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                return new(false, "output_equals_source");
+            }
+
+            if (sourceRoot.StartsWith(
+                    outputRoot + Path.DirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return new(false, "output_is_source_parent");
+            }
+
+            if (File.Exists(outputRoot))
+            {
+                return new(false, "output_is_file");
+            }
+
+            return HasReparsePointInExistingPath(outputRoot)
+                ? new(false, "output_reparse_path")
+                : new(true);
+        }
+        catch (Exception exception) when (exception is ArgumentException
+                                           or IOException
+                                           or UnauthorizedAccessException
+                                           or NotSupportedException
+                                           or PathTooLongException)
+        {
+            return new(false, "output_path_invalid");
+        }
+    }
+
+    public static OutputDestinationValidation ValidateZipDestination(
+        string sourceRootPath,
+        string zipPath,
+        string stagingRootPath)
+    {
+        if (string.IsNullOrWhiteSpace(sourceRootPath)
+            || string.IsNullOrWhiteSpace(zipPath)
+            || string.IsNullOrWhiteSpace(stagingRootPath))
+        {
+            return new(false, "zip_path_missing");
+        }
+
+        try
+        {
+            var fullZip = Path.GetFullPath(zipPath);
+            var stagingRoot = NormalizeDirectory(stagingRootPath);
+            if (!Path.GetExtension(fullZip).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                return new(false, "zip_extension_required");
+            }
+
+            if (File.Exists(fullZip) || Directory.Exists(fullZip))
+            {
+                return new(false, "zip_target_conflict");
+            }
+
+            if (IsWithinOrEqual(fullZip, stagingRoot))
+            {
+                return new(false, "zip_inside_staging");
+            }
+
+            var parent = Path.GetDirectoryName(fullZip);
+            if (string.IsNullOrWhiteSpace(parent) || File.Exists(parent))
+            {
+                return new(false, "zip_parent_invalid");
+            }
+
+            return HasReparsePointInExistingPath(parent)
+                ? new(false, "zip_reparse_path")
+                : new(true);
+        }
+        catch (Exception exception) when (exception is ArgumentException
+                                           or IOException
+                                           or UnauthorizedAccessException
+                                           or NotSupportedException
+                                           or PathTooLongException)
+        {
+            return new(false, "zip_path_invalid");
+        }
+    }
     public static bool TryBuildTargetPath(
         string sourceRootPath,
         string outputRootPath,
@@ -115,6 +209,31 @@ public static class OutputPathGuard
                    StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool HasReparsePointInExistingPath(string path)
+    {
+        for (var current = Path.GetFullPath(path);
+             !string.IsNullOrWhiteSpace(current);
+             current = Path.GetDirectoryName(current) ?? string.Empty)
+        {
+            if (Directory.Exists(current)
+                && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+            {
+                return true;
+            }
+
+            var parent = Path.GetDirectoryName(current);
+            if (string.IsNullOrWhiteSpace(parent)
+                || string.Equals(parent, current, StringComparison.OrdinalIgnoreCase))
+            {
+                break;
+            }
+        }
+
+        return false;
+    }
+
     private static string NormalizeDirectory(string path) =>
         Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 }
+
+public sealed record OutputDestinationValidation(bool IsValid, string ErrorCode = "");

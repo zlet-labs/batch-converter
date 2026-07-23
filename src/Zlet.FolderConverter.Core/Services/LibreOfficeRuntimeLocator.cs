@@ -116,16 +116,29 @@ public sealed class LibreOfficeRuntimeLocator(
         try
         {
             var fullCandidate = Path.GetFullPath(candidate);
-            var possiblePaths = File.Exists(fullCandidate)
-                ? [fullCandidate]
-                : new[]
+            if (File.Exists(fullCandidate))
+            {
+                if (!IsSofficeExecutable(fullCandidate))
                 {
-                    Path.Combine(fullCandidate, "program", "soffice.exe"),
-                    Path.Combine(fullCandidate, "soffice.exe")
-                };
-            return possiblePaths.FirstOrDefault(path =>
-                File.Exists(path)
-                && Path.GetFileName(path).Equals("soffice.exe", StringComparison.OrdinalIgnoreCase));
+                    return null;
+                }
+
+                var consoleExecutable = Path.Combine(
+                    Path.GetDirectoryName(fullCandidate)!,
+                    "soffice.com");
+                return File.Exists(consoleExecutable)
+                    ? consoleExecutable
+                    : fullCandidate;
+            }
+
+            var possiblePaths = new[]
+            {
+                Path.Combine(fullCandidate, "program", "soffice.com"),
+                Path.Combine(fullCandidate, "program", "soffice.exe"),
+                Path.Combine(fullCandidate, "soffice.com"),
+                Path.Combine(fullCandidate, "soffice.exe")
+            };
+            return possiblePaths.FirstOrDefault(File.Exists);
         }
         catch (Exception exception) when (exception is ArgumentException
                                            or IOException
@@ -134,5 +147,12 @@ public sealed class LibreOfficeRuntimeLocator(
         {
             return null;
         }
+    }
+
+    private static bool IsSofficeExecutable(string path)
+    {
+        var fileName = Path.GetFileName(path);
+        return fileName.Equals("soffice.exe", StringComparison.OrdinalIgnoreCase)
+               || fileName.Equals("soffice.com", StringComparison.OrdinalIgnoreCase);
     }
 }

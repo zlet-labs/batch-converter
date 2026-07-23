@@ -2,14 +2,16 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Zlet.FolderConverter.Core\Zlet.FolderConverter.Core.csproj" />
+    <AssemblyMetadata Include="DisplayVersion" Value="$(ZletDisplayVersion)" />
+    <AssemblyMetadata Include="PortablePackageName" Value="$(ZletPortablePackageName)" />
   </ItemGroup>
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <AssemblyName>ZletFolderConverter</AssemblyName>
+    <AssemblyName>$(ZletExecutableName)</AssemblyName>
     <RootNamespace>Zlet.FolderConverter.App</RootNamespace>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RuntimeIdentifier>$(ZletPortableRuntimeIdentifier)</RuntimeIdentifier>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

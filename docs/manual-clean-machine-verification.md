@@ -7,7 +7,7 @@ an item passed from unit tests alone.
 ## Portable and privacy
 
 - Extract the complete ZIP to a path containing spaces and Cyrillic characters.
-- Verify `ZletFolderConverter.exe`, `runtime\libreoffice`, `licenses`,
+- Verify `ZletBatchConverter.exe`, `runtime\libreoffice`, `licenses`,
   `THIRD_PARTY_NOTICES.md`, and `README_PORTABLE.txt` are present.
 - Launch without administrator rights on a machine without separately installed
   .NET Runtime, Microsoft Office, or LibreOffice.
@@ -31,6 +31,10 @@ Cyrillic, and Unicode:
 Verify:
 
 - default rules are JSON→TXT, DOC→DOCX, XLS→XLSX, PPT→PPTX;
+- source and output paths accept typed and pasted Unicode/UNC paths; Enter
+  starts scan only for a valid source;
+- all Ready rows are selected after scan; individual selection, «Выбрать все»,
+  «Снять выбор», and «Инвертировать» work across filters;
 - modern Office, OpenDocument, PDF, image, archive, and unknown defaults are
   «Не трогать»;
 - changing every permitted rule rebuilds preview immediately;
@@ -38,8 +42,8 @@ Verify:
 - preview shows only relative paths; full paths appear only in tooltips;
 - filters «Все», «К преобразованию», «Не трогаем», «Конфликты», and «Ошибки»
   show the correct rows;
-- output structure under root `_converted` matches source subfolders;
-- root `_converted` is excluded, while `archive\_converted` is scanned;
+- folder output preserves source subfolders at the explicitly selected root;
+- only the selected output folder or exact result ZIP is excluded from scan;
 - `~$*` and directory reparse points are skipped.
 
 ## Processing and failures
@@ -55,9 +59,11 @@ Verify:
 - Repeat scan and conversion; no existing target is overwritten.
 - Byte-compare every original before and after processing.
 - Confirm partial temp files and LibreOffice profiles are removed.
+- Run folder output and ZIP output, including partial success, zero success, and
+  an existing ZIP conflict. Confirm ZIP contains only successful selected files.
 - Confirm progress and current relative file update without freezing the UI.
-- Confirm the final report shows successes, errors, conflicts, skipped count,
-  `_converted` path, and working «Открыть папку результата».
+- Confirm the final report shows successes, errors, conflicts, unavailable,
+  skipped, not-selected count, and the correct folder/ZIP result action.
 
 ## Display checks
 
@@ -75,3 +81,20 @@ Verify:
   conversion fidelity, or any safety check remains unverified.
 
 Full e2e not run by agent. Local verification required before merge.
+
+## Current local agent verification
+
+- Official LibreOffice 26.2.4 Windows x86-64 package acquired and hash-checked;
+  runtime reports 26.2.4.2.
+- 15/15 synthetic LibreOffice integration tests passed with no skips.
+- Renamed portable ZIP audit passed: 589,149,052 bytes; extracted size
+  1,771,068,495 bytes; 20,275 files.
+- `ZletBatchConverter.exe` launch from a new extraction passed with
+  `ZLET_LIBREOFFICE_PATH` cleared. The process remained responsive with title
+  `Zlet Batch Converter v0.0.0`; bundled `program\soffice.com` was present.
+- The previous local bundled-runtime JSON + DOC conversion completed with
+  2 successes, 0 failures, 0 conflicts, and 0 unavailable operations. The
+  expanded selection/folder/ZIP workflow still requires human UI e2e review.
+- Runtime-present screenshots were retained only as ignored local artifacts.
+- No separate clean Windows machine or VM was available; that release gate is
+  not complete.

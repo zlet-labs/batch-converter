@@ -9,21 +9,43 @@ public sealed class FileSystemFolderScanner : IFolderScanner
     public Task<ScanResult> ScanAsync(
         string rootPath,
         bool includeSubfolders,
+        CancellationToken cancellationToken) =>
+        ScanAsync(
+            rootPath,
+            includeSubfolders,
+            Path.Combine(Path.GetFullPath(rootPath), ConvertedFolderName),
+            null,
+            cancellationToken);
+
+    public Task<ScanResult> ScanAsync(
+        string rootPath,
+        bool includeSubfolders,
+        string? excludedDirectoryPath,
+        string? excludedFilePath,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
 
         return Task.Run(
-            () => Scan(rootPath, includeSubfolders, cancellationToken),
+            () => Scan(
+                rootPath,
+                includeSubfolders,
+                excludedDirectoryPath,
+                excludedFilePath,
+                cancellationToken),
             cancellationToken);
     }
 
     private static ScanResult Scan(
         string rootPath,
         bool includeSubfolders,
+        string? excludedDirectoryPath,
+        string? excludedFilePath,
         CancellationToken cancellationToken)
     {
         var fullRootPath = Path.GetFullPath(rootPath);
+        var excludedDirectory = NormalizeOptional(excludedDirectoryPath);
+        var excludedFile = NormalizeOptional(excludedFilePath);
         var files = new List<ScannedFile>();
         var errors = new List<ScanError>();
 
@@ -52,6 +74,15 @@ public sealed class FileSystemFolderScanner : IFolderScanner
                     continue;
                 }
 
+                if (excludedFile is not null
+                    && string.Equals(
+                        Path.GetFullPath(filePath),
+                        excludedFile,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 var relativePath = Path.GetRelativePath(fullRootPath, filePath);
                 files.Add(new ScannedFile(
                     filePath,
@@ -68,7 +99,7 @@ public sealed class FileSystemFolderScanner : IFolderScanner
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (IsConvertedDirectory(directoryPath, fullRootPath)
+                if (IsExcludedDirectory(directoryPath, excludedDirectory)
                     || IsReparseDirectory(directoryPath))
                 {
                     continue;
@@ -120,6 +151,27 @@ public sealed class FileSystemFolderScanner : IFolderScanner
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         return string.Equals(candidatePath, outputPath, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsExcludedDirectory(string directoryPath, string? excludedDirectory)
+    {
+        if (excludedDirectory is null)
+        {
+            return false;
+        }
+
+        var candidate = Path.GetFullPath(directoryPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return string.Equals(candidate, excludedDirectory, StringComparison.OrdinalIgnoreCase)
+               || candidate.StartsWith(
+                   excludedDirectory + Path.DirectorySeparatorChar,
+                   StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? NormalizeOptional(string? path) =>
+        string.IsNullOrWhiteSpace(path)
+            ? null
+            : Path.GetFullPath(path)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
     public static bool IsReparseDirectory(string directoryPath)
     {

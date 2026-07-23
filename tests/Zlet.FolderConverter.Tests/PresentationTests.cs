@@ -1,6 +1,8 @@
 using Zlet.FolderConverter.App.ViewModels;
 using Zlet.FolderConverter.Core.Models;
 using Zlet.FolderConverter.Core.Services;
+using System.IO.Compression;
+using System.Security.Cryptography;
 
 namespace Zlet.FolderConverter.Tests;
 
@@ -452,6 +454,146 @@ public sealed class PresentationTests : IDisposable
         Assert.False(viewModel.CanConvert);
     }
 
+    [Fact]
+    public async Task Scan_selects_only_ready_operations_by_default()
+    {
+        var viewModel = CreateStatusViewModel(
+            [OperationStatus.Ready, OperationStatus.Skipped, OperationStatus.Conflict,
+                OperationStatus.EngineUnavailable]);
+
+        await viewModel.ScanAsync();
+
+        Assert.True(viewModel.Operations[0].IsSelected);
+        Assert.All(viewModel.Operations.Skip(1), row => Assert.False(row.IsSelected));
+        Assert.Equal(1, viewModel.SelectedReadyCount);
+    }
+
+    [Fact]
+    public async Task Selection_commands_affect_all_ready_rows_and_filters_preserve_selection()
+    {
+        var viewModel = CreateStatusViewModel(
+            [OperationStatus.Ready, OperationStatus.Ready, OperationStatus.Skipped]);
+        await viewModel.ScanAsync();
+
+        viewModel.ClearSelection();
+        Assert.Equal("Выберите файлы", viewModel.ConvertButtonText);
+        Assert.False(viewModel.CanConvert);
+
+        viewModel.Operations[0].IsSelected = true;
+        viewModel.SelectedPreviewFilter = viewModel.PreviewFilters.Single(option =>
+            option.Filter == PreviewFilter.Skip);
+        Assert.True(viewModel.Operations[0].IsSelected);
+
+        viewModel.InvertSelection();
+        Assert.False(viewModel.Operations[0].IsSelected);
+        Assert.True(viewModel.Operations[1].IsSelected);
+
+        viewModel.SelectAll();
+        Assert.Equal(2, viewModel.SelectedReadyCount);
+    }
+
+    [Fact]
+    public async Task Convert_passes_only_selected_ready_operations_to_processor()
+    {
+        var operations = CreateStatusOperations(
+            [OperationStatus.Ready, OperationStatus.Ready, OperationStatus.Skipped]);
+        var processor = new RecordingProcessor();
+        var viewModel = CreateStatusViewModel(operations, processor);
+        await viewModel.ScanAsync();
+        viewModel.Operations[1].IsSelected = false;
+
+        await viewModel.ConvertAsync();
+
+        Assert.Single(processor.Received);
+        Assert.Equal(operations[0].SourcePath, processor.Received[0].SourcePath);
+        Assert.Equal(1, viewModel.FinalNotSelected);
+        Assert.Equal("Не выбрано", viewModel.Operations[1].Status);
+    }
+
+    [Fact]
+    public async Task Quoted_source_path_is_trimmed_and_scanned()
+    {
+        Write("source.json", "{}");
+        var viewModel = CreateViewModel();
+        viewModel.SelectedFolder = $"  \"{_rootPath}\"  ";
+
+        await viewModel.ScanAsync();
+
+        Assert.Equal(_rootPath, viewModel.SelectedFolder);
+        Assert.False(viewModel.HasSourcePathError);
+        Assert.Single(viewModel.Operations);
+    }
+
+    [Fact]
+    public async Task Invalid_manual_source_path_shows_inline_error_and_does_not_scan()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.SelectedFolder = Path.Combine(_rootPath, "missing");
+
+        await viewModel.ScanAsync();
+
+        Assert.True(viewModel.HasSourcePathError);
+        Assert.False(viewModel.CanScan);
+        Assert.Empty(viewModel.Operations);
+    }
+
+    [Theory]
+    [InlineData(@"\\server\share\folder", @"\\server\share\folder")]
+    [InlineData("  \"\\\\server\\share\\папка\"  ", @"\\server\share\папка")]
+    public void Source_path_normalization_preserves_unc_paths(string input, string expected)
+    {
+        Assert.Equal(expected, MainWindowViewModel.NormalizePathInput(input));
+    }
+
+    [Fact]
+    public void Output_defaults_manual_edit_and_reset_are_mode_specific()
+    {
+        var viewModel = CreateViewModel();
+        var manualFolder = Path.Combine(_rootPath, "custom-results");
+        viewModel.OutputPath = manualFolder;
+
+        viewModel.SelectedOutputMode = OutputMode.Zip;
+        Assert.EndsWith("ZletBatchConverter-v0.0.0-results.zip", viewModel.OutputPath);
+        var manualZip = Path.Combine(_rootPath, "manual.zip");
+        viewModel.OutputPath = manualZip;
+
+        viewModel.SelectedOutputMode = OutputMode.Folder;
+        Assert.Equal(manualFolder, viewModel.OutputPath);
+        viewModel.ResetOutputPath();
+        Assert.Equal(Path.Combine(_rootPath, "_converted"), viewModel.OutputPath);
+
+        viewModel.SelectedOutputMode = OutputMode.Zip;
+        Assert.Equal(manualZip, viewModel.OutputPath);
+    }
+
+    [Fact]
+    public async Task Partial_json_batch_creates_zip_with_only_success_and_preserves_sources()
+    {
+        var stagingParent = Path.Combine(
+            Path.GetTempPath(), "ZletBatchConverter", "result-staging");
+        var stagingBefore = ExistingDirectories(stagingParent);
+        var validPath = Write(Path.Combine("nested", "valid.json"), "{\"value\":1}");
+        var invalidPath = Write("invalid.json", "{invalid");
+        var validHash = Hash(validPath);
+        var invalidHash = Hash(invalidPath);
+        var zipPath = Path.Combine(_rootPath, "result.zip");
+        var viewModel = CreateViewModel();
+        viewModel.SelectedOutputMode = OutputMode.Zip;
+        viewModel.OutputPath = zipPath;
+
+        await viewModel.ScanAsync();
+        await viewModel.ConvertAsync();
+
+        Assert.True(File.Exists(zipPath));
+        using var archive = ZipFile.OpenRead(zipPath);
+        Assert.Equal("nested/valid.txt", Assert.Single(archive.Entries).FullName);
+        Assert.Equal(1, viewModel.FinalSucceeded);
+        Assert.Equal(1, viewModel.FinalFailed);
+        Assert.Equal(validHash, Hash(validPath));
+        Assert.Equal(invalidHash, Hash(invalidPath));
+        Assert.Equal(stagingBefore, ExistingDirectories(stagingParent));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_rootPath))
@@ -529,12 +671,23 @@ public sealed class PresentationTests : IDisposable
         SourceFormat source) =>
         viewModel.FormatRules.Single(rule => rule.SourceFormat == source);
 
-    private void Write(string relativePath, string content)
+    private string Write(string relativePath, string content)
     {
         var path = Path.Combine(_rootPath, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, content);
+        return path;
     }
+
+    private static string Hash(string path) =>
+        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
+
+    private static string[] ExistingDirectories(string path) =>
+        Directory.Exists(path)
+            ? Directory.EnumerateDirectories(path)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+            : [];
 
     private sealed class CallbackScanner(string root) : IFolderScanner
     {
@@ -611,5 +764,22 @@ public sealed class PresentationTests : IDisposable
             IProgress<ConversionProgress>? progress,
             CancellationToken cancellationToken) =>
             Task.FromResult(summary);
+    }
+
+    private sealed class RecordingProcessor : IConversionProcessor
+    {
+        public IReadOnlyList<PlannedOperation> Received { get; private set; } = [];
+
+        public Task<ConversionSummary> ProcessAsync(
+            IReadOnlyList<PlannedOperation> operations,
+            IProgress<ConversionProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            Received = operations;
+            var results = operations.Select(operation =>
+                new ConversionResult(operation, OperationStatus.Succeeded, "ok")).ToArray();
+            return Task.FromResult(new ConversionSummary(
+                results.Length, 0, 0, 0, 0, 0, results));
+        }
     }
 }

@@ -56,6 +56,29 @@ public sealed class FileSystemFolderScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task ScanAsync_excludes_only_explicit_output_directory_and_zip_file()
+    {
+        var excludedDirectory = Path.Combine(_rootPath, "results");
+        var excludedZip = Path.Combine(_rootPath, "batch-results.zip");
+        Write(Path.Combine("results", "ignored.json"));
+        Write(Path.Combine("results-copy", "included.json"));
+        Write("batch-results.zip");
+        Write("batch-results.zip.backup");
+
+        var result = await new FileSystemFolderScanner().ScanAsync(
+            _rootPath,
+            includeSubfolders: true,
+            excludedDirectory,
+            excludedZip,
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Files.Count);
+        Assert.Contains(result.Files, file =>
+            file.RelativePath == Path.Combine("results-copy", "included.json"));
+        Assert.Contains(result.Files, file => file.RelativePath == "batch-results.zip.backup");
+    }
+
+    [Fact]
     public async Task ScanAsync_does_not_follow_reparse_directory_when_supported()
     {
         var external = Path.Combine(

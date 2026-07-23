@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using Forms = System.Windows.Forms;
 using Zlet.FolderConverter.App.ViewModels;
@@ -13,6 +14,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Title = $"{ProductIdentity.Name} v{ProductIdentity.Version}";
         Width = Math.Min(1280, SystemParameters.WorkArea.Width * 0.94);
         Height = Math.Min(780, SystemParameters.WorkArea.Height * 0.94);
         var resolver = new DefaultConversionAdapterResolver();
@@ -59,6 +61,28 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void SourcePathTextBox_KeyDown(
+        object sender,
+        System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != System.Windows.Input.Key.Enter || !_viewModel.CanScan)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        await _viewModel.ScanAsync();
+    }
+
+    private void SelectAllButton_Click(object sender, RoutedEventArgs e) =>
+        _viewModel.SelectAll();
+
+    private void ClearSelectionButton_Click(object sender, RoutedEventArgs e) =>
+        _viewModel.ClearSelection();
+
+    private void InvertSelectionButton_Click(object sender, RoutedEventArgs e) =>
+        _viewModel.InvertSelection();
+
     private void CopyFolderButton_Click(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanCopySelectedFolder)
@@ -93,6 +117,44 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ChooseOutputButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedOutputMode == OutputMode.Folder)
+        {
+            using var dialog = new Forms.FolderBrowserDialog
+            {
+                Description = "Выберите папку для результатов",
+                UseDescriptionForTitle = true,
+                SelectedPath = Directory.Exists(_viewModel.OutputPath)
+                    ? _viewModel.OutputPath
+                    : string.Empty
+            };
+            if (dialog.ShowDialog() == Forms.DialogResult.OK)
+            {
+                _viewModel.OutputPath = dialog.SelectedPath;
+            }
+            return;
+        }
+
+        using var saveDialog = new Forms.SaveFileDialog
+        {
+            Title = "Выберите ZIP для результатов",
+            Filter = "ZIP-архив (*.zip)|*.zip",
+            DefaultExt = "zip",
+            AddExtension = true,
+            OverwritePrompt = false,
+            FileName = Path.GetFileName(_viewModel.OutputPath),
+            InitialDirectory = Path.GetDirectoryName(_viewModel.OutputPath)
+        };
+        if (saveDialog.ShowDialog() == Forms.DialogResult.OK)
+        {
+            _viewModel.OutputPath = saveDialog.FileName;
+        }
+    }
+
+    private void ResetOutputButton_Click(object sender, RoutedEventArgs e) =>
+        _viewModel.ResetOutputPath();
+
     private void OpenResultButton_Click(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanOpenResult)
@@ -102,12 +164,17 @@ public partial class MainWindow : Window
 
         try
         {
-            Process.Start(new ProcessStartInfo
+            var startInfo = new ProcessStartInfo
             {
                 FileName = "explorer.exe",
-                ArgumentList = { _viewModel.ResultFolder },
                 UseShellExecute = true
-            });
+            };
+            if (_viewModel.SelectedOutputMode == OutputMode.Zip)
+            {
+                startInfo.ArgumentList.Add("/select,");
+            }
+            startInfo.ArgumentList.Add(_viewModel.ResultFolder);
+            Process.Start(startInfo);
         }
         catch
         {

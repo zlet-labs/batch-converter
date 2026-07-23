@@ -8,4 +8,12 @@ public interface IFolderScanner
         string rootPath,
         bool includeSubfolders,
         CancellationToken cancellationToken);
+
+    Task<ScanResult> ScanAsync(
+        string rootPath,
+        bool includeSubfolders,
+        string? excludedDirectoryPath,
+        string? excludedFilePath,
+        CancellationToken cancellationToken) =>
+        ScanAsync(rootPath, includeSubfolders, cancellationToken);
 }

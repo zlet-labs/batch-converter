@@ -1,15 +1,20 @@
-# Zlet Folder Converter
+# Zlet Batch Converter
 
-Локальное Windows-приложение для массового преобразования смешанных файлов по
-правилам. Пользователь выбирает папку, назначает одно действие каждому
-найденному формату, проверяет preview и запускает batch. Результаты сохраняются
-в `<выбранная папка>\_converted` с сохранением структуры подпапок.
+`v0.0.0` pre-alpha — локальное Windows-приложение для массового преобразования
+файлов по правилам. Репозиторий пока намеренно называется `folder-converter`;
+его адрес остаётся `https://github.com/zlet-labs/folder-converter`.
+Переименование возможно только отдельно после review и merge PR #3.
 
-Файлы не отправляются в интернет. Оригиналы не перезаписываются, не удаляются,
-не перемещаются и намеренно не изменяются. Существующий target-файл или
-директория считается конфликтом.
+Путь исходной папки можно ввести или вставить вручную либо выбрать через
+«Обзор». Сканирование запускается кнопкой или Enter. После scan пользователь
+настраивает правила и выбирает отдельные готовые операции. Доступны «Выбрать
+все», «Снять выбор», «Инвертировать» и фильтры, которые не сбрасывают выбор.
 
-## Правила
+Результат сохраняется в выбранную папку или ZIP с сохранением относительной
+структуры подпапок. Оригиналы не перезаписываются, не удаляются, не перемещаются
+и намеренно не изменяются. Существующие targets и ZIP считаются конфликтами.
+
+## Правила преобразования
 
 | Исходный формат | Допустимые действия | По умолчанию |
 | --- | --- | --- |
@@ -17,34 +22,34 @@
 | DOC | DOCX, PDF, Не трогать | DOCX |
 | XLS | XLSX, PDF, Не трогать | XLSX |
 | PPT | PPTX, PDF, Не трогать | PPTX |
-| DOCX | PDF, Не трогать | Не трогать |
-| XLSX | PDF, Не трогать | Не трогать |
-| PPTX | PDF, Не трогать | Не трогать |
+| DOCX, XLSX, PPTX | PDF, Не трогать | Не трогать |
 | ODT | DOCX, PDF, Не трогать | Не трогать |
 | ODS | XLSX, PDF, Не трогать | Не трогать |
 | ODP | PPTX, PDF, Не трогать | Не трогать |
 | PDF, изображения, архивы, неизвестные | Не трогать | Не трогать |
 
-JSON обрабатывает встроенный `JsonConversionAdapter`. Для Office и
-OpenDocument используется локальный bundled LibreOffice runtime за абстракцией
-движка. Microsoft Office COM, облачная конвертация, скачивание runtime во время
-работы, аналитика и телеметрия не используются.
+JSON обрабатывается встроенным adapter. Office и OpenDocument преобразует
+bundled LibreOffice в headless-режиме с изолированными временными профилями.
+OOXML и PDF проходят структурную проверку. Pixel-perfect совместимость не
+гарантируется. XLSX → CSV по листам не входит в ZL-041.
 
-LibreOffice запускается скрыто в headless-режиме с отдельным временным профилем
-и рабочей папкой для каждой операции. OOXML проверяется как ZIP с обязательными
-базовыми частями, PDF — по сигнатуре. Совместимость и визуальная точность зависят
-от LibreOffice и исходного документа; 100% сохранение форматирования не
-гарантируется.
+## Режимы результата
 
-XLSX → CSV по листам не входит в ZL-041.
+- Папка: default `<source>\_converted`; разрешена другая отдельная подпапка или
+  внешний путь.
+- ZIP-архив: default
+  `<source>\ZletBatchConverter-v0.0.0-results.zip`; в архив входят только
+  успешно созданные выбранные результаты. При частичном успехе ZIP создаётся,
+  при нуле успешных файлов пустой ZIP не создаётся.
+
+Выбранная output-папка или точный output ZIP исключаются из следующих scan.
+Traversal, небезопасные ZIP entries, reparse escapes и перезапись запрещены.
 
 ## Portable package
 
-Это self-contained .NET-приложение, но не один физический EXE:
-
 ```text
-ZletFolderConverter/
-  ZletFolderConverter.exe
+ZletBatchConverter-v0.0.0-win-x64/
+  ZletBatchConverter.exe
   runtime/
     libreoffice/
   licenses/
@@ -52,20 +57,14 @@ ZletFolderConverter/
   README_PORTABLE.txt
 ```
 
-Пользователю не требуется отдельно устанавливать .NET Runtime, Microsoft Office
-или LibreOffice. Основной объём ZIP занимает выбранный runtime; точный размер
-нужно измерять на фактическом release artifact.
-
-LibreOffice binaries не коммитятся в Git. Сборка требует явный путь:
-
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/publish-portable.ps1 `
   -LibreOfficePath "C:\path\to\LibreOffice"
 ```
 
-Скрипт прекращает работу, если не подтверждены runtime, версия или лицензионный
-документ из выбранного пакета. Публичный artifact запрещён до проверки
-конкретной сборки LibreOffice и сгенерированных notices.
+Пакет self-contained и не требует отдельно установленного .NET Runtime,
+Microsoft Office или LibreOffice. Binaries и generated artifacts не коммитятся.
+Первый public release не публикуется до ручного review.
 
 ## Сборка и тесты
 
@@ -75,23 +74,14 @@ dotnet build FolderConverter.sln -c Release
 dotnet test FolderConverter.sln -c Release
 ```
 
-Opt-in integration tests запускаются только с реальным runtime:
-
 ```powershell
 $env:ZLET_LIBREOFFICE_PATH = "C:\path\to\LibreOffice"
 dotnet test FolderConverter.sln -c Release --filter Category=LibreOfficeIntegration
 ```
 
-Для локальной разработки можно использовать игнорируемый
-`ZletFolderConverter.local.json` по пустому примеру в репозитории. Реальный
-локальный путь нельзя коммитить, логировать или включать в export.
+Проверенный runtime: официальный LibreOffice 26.2.4 Windows x86-64 (версия
+26.2.4.2). Проверяются 15 mappings: legacy Office → OOXML/PDF, modern Office →
+PDF и OpenDocument → OOXML/PDF.
 
-## Защита данных
-
-- корневая `_converted` исключается из scan, вложенная
-  `archive\_converted` остаётся пользовательской папкой;
-- временные Office-файлы `~$*` пропускаются;
-- reparse point, junction и symlink directory не обходятся;
-- path traversal и target за пределами корневой `_converted` отклоняются;
-- ошибка одного файла не останавливает batch;
-- содержимое документов, command line, пароли, токены и ключи не логируются.
+Файлы остаются локально: cloud conversion, telemetry, analytics и runtime
+download отсутствуют. Фактические локальные пути нельзя коммитить или логировать.

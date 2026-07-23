@@ -5,6 +5,7 @@ public enum PreviewFilter
     All,
     Convert,
     Skip,
+    Unavailable,
     Conflicts,
     Errors
 }

@@ -25,6 +25,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private int _foundCount;
     private int _readyCount;
     private int _skippedCount;
+    private int _unavailableCount;
     private int _conflictCount;
     private int _errorCount;
     private double _progressPercent;
@@ -33,6 +34,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private int _finalSucceeded;
     private int _finalFailed;
     private int _finalConflicts;
+    private int _finalUnavailable;
     private int _finalSkipped;
     private string _resultFolder = string.Empty;
 
@@ -50,6 +52,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             new(PreviewFilter.All, "Все"),
             new(PreviewFilter.Convert, "К преобразованию"),
             new(PreviewFilter.Skip, "Не трогаем"),
+            new(PreviewFilter.Unavailable, "Недоступно"),
             new(PreviewFilter.Conflicts, "Конфликты"),
             new(PreviewFilter.Errors, "Ошибки")
         ];
@@ -73,11 +76,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             if (SetProperty(ref _selectedFolder, value))
             {
+                OnPropertyChanged(nameof(SelectedFolderDisplay));
+                OnPropertyChanged(nameof(CanCopySelectedFolder));
                 InvalidateScan("Папка изменена. Нажмите «Найти файлы».");
                 NotifyAvailability();
             }
         }
     }
+
+    public string SelectedFolderDisplay => PathDisplayFormatter.Format(SelectedFolder);
+    public bool CanCopySelectedFolder => !string.IsNullOrWhiteSpace(SelectedFolder);
 
     public bool IncludeSubfolders
     {
@@ -135,6 +143,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public bool HasRules => FormatRules.Count > 0;
     public bool HasPreview => Operations.Count > 0;
     public bool HasErrors => ErrorMessages.Count > 0;
+    public bool HasEngineUnavailable => Operations.Any(
+        row => row.Operation.Status == OperationStatus.EngineUnavailable);
     public bool ShowProgress => IsConverting;
     public bool CanOpenResult => Directory.Exists(ResultFolder);
 
@@ -163,6 +173,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _skippedCount, value);
     }
 
+    public int UnavailableCount
+    {
+        get => _unavailableCount;
+        private set => SetProperty(ref _unavailableCount, value);
+    }
+
     public int ConflictCount
     {
         get => _conflictCount;
@@ -175,7 +191,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _errorCount, value);
     }
 
-    public string ConvertButtonText => $"Преобразовать {ReadyCount} файлов";
+    public string ConvertButtonText =>
+        $"Преобразовать {ReadyCount} {GetRussianFileWord(ReadyCount)}";
+
+    public static string GetRussianFileWord(int count)
+    {
+        var absolute = Math.Abs(count);
+        var lastTwoDigits = absolute % 100;
+        if (lastTwoDigits is >= 11 and <= 14)
+        {
+            return "файлов";
+        }
+
+        return (absolute % 10) switch
+        {
+            1 => "файл",
+            2 or 3 or 4 => "файла",
+            _ => "файлов"
+        };
+    }
 
     public string StateMessage
     {
@@ -223,6 +257,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         get => _finalConflicts;
         private set => SetProperty(ref _finalConflicts, value);
+    }
+
+    public int FinalUnavailable
+    {
+        get => _finalUnavailable;
+        private set => SetProperty(ref _finalUnavailable, value);
     }
 
     public int FinalSkipped
@@ -283,7 +323,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     capability,
                     group.Count(),
                     _ruleSet.GetRule(group.Key).Target,
-                    ChangeRule));
+                    ChangeRule,
+                    group.Key == SourceFormat.Unknown
+                        ? ExtensionBreakdownFormatter.Format(group)
+                        : string.Empty));
             }
 
             RebuildPreview();
@@ -338,8 +381,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
             UpdatePreviewSummary();
             FinalSucceeded = summary.Succeeded;
-            FinalFailed = summary.Failed + summary.EngineUnavailable + summary.Unsupported;
+            FinalFailed = summary.Failed;
             FinalConflicts = summary.Conflicts;
+            FinalUnavailable = summary.EngineUnavailable + summary.Unsupported;
             FinalSkipped = summary.Skipped;
             ResultFolder = Path.Combine(_scanRoot, "_converted");
             HasFinalReport = true;
@@ -393,18 +437,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         UpdatePreviewSummary();
         OnPropertyChanged(nameof(HasRules));
         OnPropertyChanged(nameof(HasPreview));
+        OnPropertyChanged(nameof(HasEngineUnavailable));
         OnPropertyChanged(nameof(VisibleOperations));
     }
 
     private void UpdatePreviewSummary()
     {
         FoundCount = Operations.Count;
-        ReadyCount = Operations.Count(row => row.Operation.Status == OperationStatus.Ready);
+        ReadyCount = Operations.Count(row => row.Operation.Status is
+            OperationStatus.Ready or OperationStatus.Converting);
         SkippedCount = Operations.Count(row => row.Operation.Status == OperationStatus.Skipped);
+        UnavailableCount = Operations.Count(row => row.Operation.Status is
+            OperationStatus.EngineUnavailable or OperationStatus.Unsupported);
         ConflictCount = Operations.Count(row => row.Operation.Status == OperationStatus.Conflict);
-        ErrorCount = Operations.Count(row => row.Operation.Status is OperationStatus.Failed
-            or OperationStatus.EngineUnavailable
-            or OperationStatus.Unsupported);
+        ErrorCount = Operations.Count(row => row.Operation.Status == OperationStatus.Failed);
+        OnPropertyChanged(nameof(HasEngineUnavailable));
         NotifyAvailability();
     }
 
@@ -454,6 +501,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 progress.Result with { Operation = completed });
         }
 
+        UpdatePreviewSummary();
         OnPropertyChanged(nameof(VisibleOperations));
     }
 
@@ -465,10 +513,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 or OperationStatus.Converting
                 or OperationStatus.Succeeded,
             PreviewFilter.Skip => row.Operation.Status == OperationStatus.Skipped,
+            PreviewFilter.Unavailable => row.Operation.Status is
+                OperationStatus.EngineUnavailable or OperationStatus.Unsupported,
             PreviewFilter.Conflicts => row.Operation.Status == OperationStatus.Conflict,
-            PreviewFilter.Errors => row.Operation.Status is OperationStatus.Failed
-                or OperationStatus.EngineUnavailable
-                or OperationStatus.Unsupported,
+            PreviewFilter.Errors => row.Operation.Status == OperationStatus.Failed,
             _ => true
         };
 
@@ -494,12 +542,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         FoundCount = 0;
         ReadyCount = 0;
         SkippedCount = 0;
+        UnavailableCount = 0;
         ConflictCount = 0;
         ErrorCount = 0;
         HasFinalReport = false;
+        FinalSucceeded = 0;
+        FinalFailed = 0;
+        FinalConflicts = 0;
+        FinalUnavailable = 0;
+        FinalSkipped = 0;
         ResultFolder = string.Empty;
         OnPropertyChanged(nameof(HasRules));
         OnPropertyChanged(nameof(HasPreview));
+        OnPropertyChanged(nameof(HasEngineUnavailable));
         OnPropertyChanged(nameof(HasErrors));
         OnPropertyChanged(nameof(VisibleOperations));
     }

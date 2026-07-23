@@ -13,8 +13,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        Width = Math.Min(1080, SystemParameters.WorkArea.Width * 0.94);
-        Height = Math.Min(700, SystemParameters.WorkArea.Height * 0.92);
+        Width = Math.Min(1280, SystemParameters.WorkArea.Width * 0.94);
+        Height = Math.Min(780, SystemParameters.WorkArea.Height * 0.94);
         var resolver = new DefaultConversionAdapterResolver();
         _viewModel = new MainWindowViewModel(
             new FileSystemFolderScanner(),
@@ -56,6 +56,23 @@ public partial class MainWindow : Window
         {
             _viewModel.AddError("Не удалось проверить папку. Повторите попытку или выберите другую папку.");
             _viewModel.StateMessage = "Проверка завершилась ошибкой.";
+        }
+    }
+
+    private void CopyFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_viewModel.CanCopySelectedFolder)
+        {
+            return;
+        }
+
+        try
+        {
+            System.Windows.Clipboard.SetText(_viewModel.SelectedFolder);
+        }
+        catch
+        {
+            _viewModel.AddError("Не удалось скопировать путь в буфер обмена.");
         }
     }
 

@@ -13,11 +13,13 @@ public sealed class RuleRowViewModel : INotifyPropertyChanged
         FormatCapability capability,
         int count,
         ConversionTarget selectedTarget,
-        Action<SourceFormat, ConversionTarget> selectionChanged)
+        Action<SourceFormat, ConversionTarget> selectionChanged,
+        string extensionBreakdown = "")
     {
         SourceFormat = capability.SourceFormat;
         FormatLabel = capability.DisplayName;
         Count = count;
+        ExtensionBreakdown = extensionBreakdown;
         Targets = capability.AllowedTargets
             .Select(target => new ConversionTargetOption(target, target.ToDisplayName()))
             .ToArray();
@@ -30,6 +32,8 @@ public sealed class RuleRowViewModel : INotifyPropertyChanged
     public SourceFormat SourceFormat { get; }
     public string FormatLabel { get; }
     public int Count { get; }
+    public string ExtensionBreakdown { get; }
+    public bool HasExtensionBreakdown => !string.IsNullOrWhiteSpace(ExtensionBreakdown);
     public IReadOnlyList<ConversionTargetOption> Targets { get; }
 
     public ConversionTargetOption SelectedTarget

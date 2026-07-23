@@ -20,7 +20,7 @@ public sealed class PresentationTests : IDisposable
     [InlineData(OperationStatus.Succeeded, "Успешно")]
     [InlineData(OperationStatus.Conflict, "Конфликт")]
     [InlineData(OperationStatus.Failed, "Ошибка")]
-    [InlineData(OperationStatus.EngineUnavailable, "Движок недоступен")]
+    [InlineData(OperationStatus.EngineUnavailable, "Нет движка")]
     [InlineData(OperationStatus.Unsupported, "Не поддерживается")]
     public void OperationRowViewModel_localizes_statuses(
         OperationStatus status,
@@ -96,8 +96,108 @@ public sealed class PresentationTests : IDisposable
 
         await viewModel.ScanAsync();
 
-        Assert.Equal(SourceFormat.Unknown, Assert.Single(viewModel.FormatRules).SourceFormat);
+        var rule = Assert.Single(viewModel.FormatRules);
+        Assert.Equal(SourceFormat.Unknown, rule.SourceFormat);
+        Assert.Equal("CUSTOM: 1", rule.ExtensionBreakdown);
+        Assert.True(rule.HasExtensionBreakdown);
         Assert.Equal(OperationStatus.Skipped, Assert.Single(viewModel.Operations).Operation.Status);
+    }
+
+    [Fact]
+    public async Task Preview_summary_separates_unavailable_and_failed_operations()
+    {
+        var statuses = new[]
+        {
+            OperationStatus.Ready,
+            OperationStatus.Converting,
+            OperationStatus.Succeeded,
+            OperationStatus.Skipped,
+            OperationStatus.EngineUnavailable,
+            OperationStatus.Unsupported,
+            OperationStatus.Conflict,
+            OperationStatus.Failed
+        };
+        var viewModel = CreateStatusViewModel(statuses);
+
+        await viewModel.ScanAsync();
+
+        Assert.Equal(8, viewModel.FoundCount);
+        Assert.Equal(2, viewModel.ReadyCount);
+        Assert.Equal(1, viewModel.SkippedCount);
+        Assert.Equal(2, viewModel.UnavailableCount);
+        Assert.Equal(1, viewModel.ConflictCount);
+        Assert.Equal(1, viewModel.ErrorCount);
+        Assert.True(viewModel.HasEngineUnavailable);
+    }
+
+    public static IEnumerable<object[]> PreviewFilterCases()
+    {
+        var all = new[]
+        {
+            OperationStatus.Ready,
+            OperationStatus.Converting,
+            OperationStatus.Succeeded,
+            OperationStatus.Skipped,
+            OperationStatus.EngineUnavailable,
+            OperationStatus.Unsupported,
+            OperationStatus.Conflict,
+            OperationStatus.Failed
+        };
+        yield return [PreviewFilter.All, all];
+        yield return
+        [
+            PreviewFilter.Convert,
+            new[]
+            {
+                OperationStatus.Ready,
+                OperationStatus.Converting,
+                OperationStatus.Succeeded
+            }
+        ];
+        yield return [PreviewFilter.Skip, new[] { OperationStatus.Skipped }];
+        yield return
+        [
+            PreviewFilter.Unavailable,
+            new[]
+            {
+                OperationStatus.EngineUnavailable,
+                OperationStatus.Unsupported
+            }
+        ];
+        yield return [PreviewFilter.Conflicts, new[] { OperationStatus.Conflict }];
+        yield return [PreviewFilter.Errors, new[] { OperationStatus.Failed }];
+    }
+
+    [Theory]
+    [MemberData(nameof(PreviewFilterCases))]
+    public async Task Preview_filters_match_only_their_statuses(
+        PreviewFilter filter,
+        OperationStatus[] expected)
+    {
+        var allStatuses = (OperationStatus[])PreviewFilterCases().First()[1];
+        var viewModel = CreateStatusViewModel(allStatuses);
+        await viewModel.ScanAsync();
+
+        viewModel.SelectedPreviewFilter = viewModel.PreviewFilters.Single(option =>
+            option.Filter == filter);
+
+        Assert.Equal(expected, viewModel.VisibleOperations.Select(row =>
+            row.Operation.Status));
+    }
+
+    [Theory]
+    [InlineData(OperationStatus.EngineUnavailable, true)]
+    [InlineData(OperationStatus.Unsupported, false)]
+    [InlineData(OperationStatus.Ready, false)]
+    public async Task Runtime_banner_is_visible_only_for_engine_unavailable(
+        OperationStatus status,
+        bool expected)
+    {
+        var viewModel = CreateStatusViewModel([status]);
+
+        await viewModel.ScanAsync();
+
+        Assert.Equal(expected, viewModel.HasEngineUnavailable);
     }
 
     [Fact]
@@ -148,11 +248,178 @@ public sealed class PresentationTests : IDisposable
 
         Assert.True(viewModel.HasFinalReport);
         Assert.Equal(1, viewModel.FinalSucceeded);
+        Assert.Equal(0, viewModel.FinalFailed);
+        Assert.Equal(0, viewModel.FinalUnavailable);
         Assert.Equal(1, viewModel.FinalSkipped);
         Assert.Equal("Успешно", viewModel.Operations.Single(row =>
             row.Operation.SourceFormat == SourceFormat.Json).Status);
         Assert.True(File.Exists(Path.Combine(_rootPath, "_converted", "users.txt")));
         Assert.Equal(source, File.ReadAllText(Path.Combine(_rootPath, "users.json")));
+    }
+
+    [Fact]
+    public async Task Mixed_batch_converts_json_without_counting_unavailable_doc_as_failure()
+    {
+        Write("data.json", """{"name":"Тест"}""");
+        Write("legacy.doc", "synthetic");
+        Write("manual.pdf", "%PDF-1.7");
+        var resolver = new DefaultConversionAdapterResolver(
+        [
+            new JsonConversionAdapter(new OutputResultValidator()),
+            new UnavailableAdapter(SourceFormat.Doc, ConversionTarget.Docx)
+        ]);
+        var viewModel = new MainWindowViewModel(
+            new FileSystemFolderScanner(),
+            new ConversionPlanner(resolver),
+            new ConversionProcessor(resolver))
+        {
+            SelectedFolder = _rootPath
+        };
+
+        await viewModel.ScanAsync();
+
+        Assert.Equal(1, viewModel.ReadyCount);
+        Assert.Equal(1, viewModel.UnavailableCount);
+        Assert.Equal(1, viewModel.SkippedCount);
+        Assert.Equal(0, viewModel.ErrorCount);
+        Assert.Equal("Преобразовать 1 файл", viewModel.ConvertButtonText);
+
+        await viewModel.ConvertAsync();
+
+        Assert.Equal(1, viewModel.FinalSucceeded);
+        Assert.Equal(1, viewModel.FinalUnavailable);
+        Assert.Equal(1, viewModel.FinalSkipped);
+        Assert.Equal(0, viewModel.FinalFailed);
+        Assert.Equal(0, viewModel.ReadyCount);
+        Assert.False(viewModel.CanConvert);
+        Assert.True(File.Exists(Path.Combine(_rootPath, "_converted", "data.txt")));
+        Assert.False(File.Exists(Path.Combine(_rootPath, "_converted", "legacy.docx")));
+    }
+
+    [Fact]
+    public async Task Final_unavailable_combines_engine_unavailable_and_unsupported()
+    {
+        var operations = CreateStatusOperations(
+        [
+            OperationStatus.Ready,
+            OperationStatus.EngineUnavailable,
+            OperationStatus.Unsupported
+        ]);
+        var completed = operations.Select(operation =>
+        {
+            var status = operation.Status == OperationStatus.Ready
+                ? OperationStatus.Succeeded
+                : operation.Status;
+            return new ConversionResult(operation, status, status.ToString());
+        }).ToArray();
+        var summary = new ConversionSummary(
+            Succeeded: 1,
+            Conflicts: 0,
+            Failed: 0,
+            Skipped: 0,
+            EngineUnavailable: 1,
+            Unsupported: 1,
+            completed);
+        var viewModel = CreateStatusViewModel(
+            operations,
+            new StaticProcessor(summary));
+
+        await viewModel.ScanAsync();
+        await viewModel.ConvertAsync();
+
+        Assert.Equal(2, viewModel.FinalUnavailable);
+        Assert.Equal(0, viewModel.FinalFailed);
+    }
+
+    [Theory]
+    [InlineData(1, "Преобразовать 1 файл")]
+    [InlineData(2, "Преобразовать 2 файла")]
+    [InlineData(5, "Преобразовать 5 файлов")]
+    [InlineData(11, "Преобразовать 11 файлов")]
+    [InlineData(21, "Преобразовать 21 файл")]
+    public async Task Convert_button_uses_russian_declension(
+        int readyCount,
+        string expected)
+    {
+        var viewModel = CreateStatusViewModel(
+            Enumerable.Repeat(OperationStatus.Ready, readyCount).ToArray());
+
+        await viewModel.ScanAsync();
+
+        Assert.Equal(expected, viewModel.ConvertButtonText);
+    }
+
+    [Fact]
+    public void Selected_folder_display_keeps_short_path_and_trims_long_path_from_left()
+    {
+        const string shortPath = @"C:\Проекты\Тест";
+        const string longPath =
+            @"C:\Очень длинная родительская папка\Ещё один каталог\PROJECT\Поддержка кастомизации текстов";
+
+        Assert.Equal(shortPath, PathDisplayFormatter.Format(shortPath));
+        var display = PathDisplayFormatter.Format(longPath);
+        Assert.StartsWith("…\\", display);
+        Assert.EndsWith(@"PROJECT\Поддержка кастомизации текстов", display);
+        Assert.Contains("Поддержка кастомизации текстов", display);
+    }
+
+    [Fact]
+    public void Selected_folder_display_preserves_unicode_and_handles_roots()
+    {
+        var unicodePath =
+            @"C:\parent folder with a long name\ещё одна папка\Проект Ω 😀\Финальная папка";
+
+        var exception = Record.Exception(() =>
+        {
+            Assert.Equal(@"C:\", PathDisplayFormatter.Format(@"C:\"));
+            Assert.Equal(@"\\server\share", PathDisplayFormatter.Format(@"\\server\share"));
+            Assert.Contains("Финальная папка", PathDisplayFormatter.Format(unicodePath));
+            Assert.Contains("Ω", PathDisplayFormatter.Format(unicodePath));
+        });
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void Selected_folder_display_has_clear_empty_placeholder()
+    {
+        Assert.Equal(
+            PathDisplayFormatter.EmptyPathPlaceholder,
+            PathDisplayFormatter.Format(string.Empty));
+    }
+
+    [Fact]
+    public void Other_extension_breakdown_groups_case_insensitively_and_sorts()
+    {
+        var files = new[]
+        {
+            Scanned("one.PDF"),
+            Scanned("two.pdf"),
+            Scanned("image.PNG"),
+            Scanned("nested/second.png"),
+            Scanned("readme.TXT"),
+            Scanned("LICENSE")
+        };
+
+        Assert.Equal(
+            "PDF: 2 · PNG: 2 · TXT: 1 · Без расширения: 1",
+            ExtensionBreakdownFormatter.Format(files));
+    }
+
+    [Fact]
+    public void Other_extension_breakdown_does_not_expose_names_or_paths()
+    {
+        var file = new ScannedFile(
+            Path.Combine(_rootPath, "secret-client-name.PDF"),
+            Path.Combine("private-folder", "secret-client-name.PDF"),
+            SourceFormat.Unknown);
+
+        var breakdown = ExtensionBreakdownFormatter.Format([file]);
+
+        Assert.Equal("PDF: 1", breakdown);
+        Assert.DoesNotContain("secret", breakdown, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("private", breakdown, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(_rootPath, breakdown, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -206,6 +473,57 @@ public sealed class PresentationTests : IDisposable
         };
     }
 
+    private MainWindowViewModel CreateStatusViewModel(OperationStatus[] statuses)
+    {
+        var operations = CreateStatusOperations(statuses);
+        return CreateStatusViewModel(operations);
+    }
+
+    private PlannedOperation[] CreateStatusOperations(OperationStatus[] statuses)
+    {
+        return statuses.Select((status, index) =>
+        {
+            var relativePath = $"status-{index}.custom";
+            return new PlannedOperation(
+                Path.Combine(_rootPath, relativePath),
+                relativePath,
+                SourceFormat.Unknown,
+                ConversionTarget.Skip,
+                string.Empty,
+                string.Empty,
+                false,
+                status,
+                status.ToString());
+        }).ToArray();
+    }
+
+    private MainWindowViewModel CreateStatusViewModel(
+        PlannedOperation[] operations,
+        IConversionProcessor? processor = null)
+    {
+        var scan = new ScanResult(
+            _rootPath,
+            operations.Select(operation => new ScannedFile(
+                operation.SourcePath,
+                operation.RelativePath,
+                operation.SourceFormat)).ToArray(),
+            []);
+
+        return new MainWindowViewModel(
+            new StaticScanner(scan),
+            new StaticPlanner(operations),
+            processor)
+        {
+            SelectedFolder = _rootPath
+        };
+    }
+
+    private ScannedFile Scanned(string relativePath) =>
+        new(
+            Path.Combine(_rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar)),
+            relativePath,
+            SourceFormat.Unknown);
+
     private static RuleRowViewModel RuleFor(
         MainWindowViewModel viewModel,
         SourceFormat source) =>
@@ -246,5 +564,52 @@ public sealed class PresentationTests : IDisposable
             ReceivedRoot = rootPath;
             return [];
         }
+    }
+
+    private sealed class StaticScanner(ScanResult result) : IFolderScanner
+    {
+        public Task<ScanResult> ScanAsync(
+            string rootPath,
+            bool includeSubfolders,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(result);
+    }
+
+    private sealed class StaticPlanner(
+        IReadOnlyList<PlannedOperation> operations) : IConversionPlanner
+    {
+        public IReadOnlyList<PlannedOperation> CreatePlan(
+            ScanResult scanResult,
+            string rootPath,
+            RuleSet ruleSet) =>
+            operations;
+    }
+
+    private sealed class UnavailableAdapter(
+        SourceFormat source,
+        ConversionTarget target) : IConversionAdapter
+    {
+        public bool IsAvailable => false;
+        public string AvailabilityMessage => "unavailable";
+
+        public bool CanConvert(
+            SourceFormat sourceFormat,
+            ConversionTarget conversionTarget) =>
+            sourceFormat == source && conversionTarget == target;
+
+        public Task<ConversionResult> ConvertAsync(
+            PlannedOperation operation,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Unavailable adapter must not run.");
+    }
+
+    private sealed class StaticProcessor(
+        ConversionSummary summary) : IConversionProcessor
+    {
+        public Task<ConversionSummary> ProcessAsync(
+            IReadOnlyList<PlannedOperation> operations,
+            IProgress<ConversionProgress>? progress,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(summary);
     }
 }

@@ -47,7 +47,7 @@ public sealed class OperationRowViewModel
         OperationStatus.Succeeded => "Успешно",
         OperationStatus.Conflict => "Конфликт",
         OperationStatus.Failed => "Ошибка",
-        OperationStatus.EngineUnavailable => "Движок недоступен",
+        OperationStatus.EngineUnavailable => "Нет движка",
         OperationStatus.Unsupported => "Не поддерживается",
         _ => "Неизвестно"
     };

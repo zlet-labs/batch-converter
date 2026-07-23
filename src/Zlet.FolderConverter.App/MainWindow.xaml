@@ -5,10 +5,10 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Zlet Folder Converter"
-        Width="1080"
-        Height="700"
-        MinWidth="720"
-        MinHeight="480"
+        Width="1280"
+        Height="780"
+        MinWidth="900"
+        MinHeight="540"
         Background="{StaticResource PageBackgroundBrush}"
         Foreground="{StaticResource TextPrimaryBrush}"
         WindowStartupLocation="CenterScreen">
@@ -40,7 +40,7 @@
             </Ellipse.Effect>
         </Ellipse>
 
-        <Grid Margin="18">
+        <Grid Margin="20">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -58,15 +58,15 @@
                                FontSize="27"
                                FontWeight="SemiBold" />
                     <TextBlock Text="Массовое преобразование файлов в папках и подпапках"
-                               Margin="0,3,0,0"
-                               FontSize="13"
+                               Margin="0,4,0,0"
+                               FontSize="14"
                                Foreground="{StaticResource TextSecondaryBrush}" />
                 </StackPanel>
                 <Border Grid.Column="1"
                         Style="{StaticResource PrivacyBadgeStyle}"
                         VerticalAlignment="Center">
                     <TextBlock Text="●  Локально · Файлы не отправляются в интернет"
-                               FontSize="11"
+                               FontSize="14"
                                FontWeight="SemiBold"
                                Foreground="#B9F4FF" />
                 </Border>
@@ -80,6 +80,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
@@ -102,10 +103,10 @@
                             BorderBrush="{StaticResource BorderBrushSoft}"
                             BorderThickness="1"
                             CornerRadius="7"
-                            Height="38"
+                            Height="42"
                             Margin="0,0,10,0"
                             Padding="11,0">
-                        <TextBlock Text="{Binding SelectedFolder, TargetNullValue=Папка не выбрана}"
+                        <TextBlock Text="{Binding SelectedFolderDisplay}"
                                    ToolTip="{Binding SelectedFolder}"
                                    TextTrimming="CharacterEllipsis"
                                    VerticalAlignment="Center"
@@ -113,20 +114,28 @@
                     </Border>
 
                     <Button Grid.Column="2"
+                            Content="Копировать"
+                            Style="{StaticResource CompactButtonStyle}"
+                            ToolTip="Копировать полный путь"
+                            Margin="0,0,10,0"
+                            IsEnabled="{Binding CanCopySelectedFolder}"
+                            Click="CopyFolderButton_Click" />
+
+                    <Button Grid.Column="3"
                             Content="Обзор"
                             Style="{StaticResource SecondaryButtonStyle}"
                             Margin="0,0,10,0"
                             IsEnabled="{Binding CanChangeSettings}"
                             Click="ChooseFolderButton_Click" />
 
-                    <CheckBox Grid.Column="3"
+                    <CheckBox Grid.Column="4"
                               Content="Включать подпапки"
                               Style="{StaticResource ToggleSwitchStyle}"
                               IsChecked="{Binding IncludeSubfolders}"
                               Margin="0,0,12,0"
                               IsEnabled="{Binding CanChangeSettings}" />
 
-                    <Button Grid.Column="4"
+                    <Button Grid.Column="5"
                             Content="Найти файлы"
                             Style="{StaticResource PrimaryButtonStyle}"
                             IsEnabled="{Binding CanScan}"
@@ -136,8 +145,8 @@
 
             <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="300" MinWidth="245" />
-                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="320" MinWidth="280" />
+                    <ColumnDefinition Width="14" />
                     <ColumnDefinition Width="*" MinWidth="400" />
                 </Grid.ColumnDefinitions>
 
@@ -166,10 +175,10 @@
                             </Border>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="Правила"
-                                           FontSize="15"
+                                           FontSize="17"
                                            FontWeight="SemiBold" />
                                 <TextBlock Text="Одно действие для каждого формата"
-                                           FontSize="11"
+                                           FontSize="14"
                                            Foreground="{StaticResource TextTertiaryBrush}" />
                             </StackPanel>
                         </Grid>
@@ -184,16 +193,41 @@
                                       AutoGenerateColumns="False"
                                       HeadersVisibility="Column"
                                       BorderThickness="0"
+                                      RowHeight="52"
+                                      RowDetailsVisibilityMode="Visible"
                                       IsReadOnly="True"
                                       Visibility="{Binding HasRules, Converter={StaticResource BoolToVisibilityConverter}}">
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="12,-5,12,8"
+                                                Padding="10,6"
+                                                CornerRadius="6"
+                                                Background="#6B17243A"
+                                                Visibility="{Binding HasExtensionBreakdown, Converter={StaticResource BoolToVisibilityConverter}}">
+                                            <TextBlock Text="{Binding ExtensionBreakdown}"
+                                                       ToolTip="{Binding ExtensionBreakdown}"
+                                                       FontSize="14"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       TextWrapping="Wrap" />
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Формат"
-                                                        Binding="{Binding FormatLabel}"
-                                                        Width="*" />
+                                    <DataGridTemplateColumn Header="Формат" Width="*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel VerticalAlignment="Center"
+                                                            Margin="12,0,0,0">
+                                                    <TextBlock Text="{Binding FormatLabel}"
+                                                               FontWeight="SemiBold" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
                                     <DataGridTextColumn Header="Найдено"
                                                         Binding="{Binding Count}"
-                                                        Width="66" />
-                                    <DataGridTemplateColumn Header="Что делать" Width="128">
+                                                        Width="72" />
+                                    <DataGridTemplateColumn Header="Что делать" Width="150">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <ComboBox ItemsSource="{Binding Targets}"
@@ -222,6 +256,7 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
@@ -244,15 +279,15 @@
                             </Border>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="Preview операций"
-                                           FontSize="15"
+                                           FontSize="17"
                                            FontWeight="SemiBold" />
                                 <TextBlock Text="{Binding StateMessage}"
-                                           FontSize="11"
+                                           FontSize="14"
                                            Foreground="{StaticResource TextTertiaryBrush}"
                                            TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                             <ComboBox Grid.Column="2"
-                                      Width="154"
+                                      Width="172"
                                       ItemsSource="{Binding PreviewFilters}"
                                       SelectedItem="{Binding SelectedPreviewFilter}">
                                 <ComboBox.ItemTemplate>
@@ -268,7 +303,7 @@
                                 BorderBrush="#16243A"
                                 BorderThickness="0,1"
                                 Padding="14,8">
-                            <UniformGrid Columns="5">
+                            <UniformGrid Columns="6">
                                 <StackPanel>
                                     <TextBlock Text="Найдено" Style="{StaticResource MetricLabelStyle}" />
                                     <TextBlock Text="{Binding FoundCount}" Style="{StaticResource MetricValueStyle}" />
@@ -282,6 +317,10 @@
                                     <TextBlock Text="{Binding SkippedCount}" Style="{StaticResource MetricValueStyle}" />
                                 </StackPanel>
                                 <StackPanel>
+                                    <TextBlock Text="Недоступно" Style="{StaticResource MetricLabelStyle}" />
+                                    <TextBlock Text="{Binding UnavailableCount}" Style="{StaticResource MetricValueStyle}" Foreground="#FFD37A" />
+                                </StackPanel>
+                                <StackPanel>
                                     <TextBlock Text="Конфликты" Style="{StaticResource MetricLabelStyle}" />
                                     <TextBlock Text="{Binding ConflictCount}" Style="{StaticResource MetricValueStyle}" Foreground="#FBBF72" />
                                 </StackPanel>
@@ -292,7 +331,37 @@
                             </UniformGrid>
                         </Border>
 
-                        <Grid Grid.Row="2">
+                        <Border Grid.Row="2"
+                                Margin="12,10,12,0"
+                                Padding="14,10"
+                                CornerRadius="8"
+                                Background="#664B3514"
+                                BorderBrush="#B88028"
+                                BorderThickness="1"
+                                Visibility="{Binding HasEngineUnavailable, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="!"
+                                           Width="24"
+                                           Height="24"
+                                           Margin="0,0,10,0"
+                                           TextAlignment="Center"
+                                           FontWeight="Bold"
+                                           Foreground="#FFD37A" />
+                                <TextBlock Grid.Column="1"
+                                           Text="LibreOffice не найден. Офисные файлы пока нельзя преобразовать. JSON-конвертация доступна."
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="#FFE1A6"
+                                           TextWrapping="Wrap"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+
+                        <Grid Grid.Row="3">
                             <TextBlock Text="{Binding EmptyStateMessage}"
                                        HorizontalAlignment="Center"
                                        VerticalAlignment="Center"
@@ -328,11 +397,12 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="Статус" Width="132">
+                                    <DataGridTemplateColumn Header="Статус" Width="164">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <Border CornerRadius="10"
-                                                        Padding="8,3"
+                                                        Padding="10,4"
+                                                        MinHeight="28"
                                                         HorizontalAlignment="Left"
                                                         ToolTip="{Binding Message}">
                                                     <Border.Style>
@@ -352,7 +422,7 @@
                                                         </Style>
                                                     </Border.Style>
                                                     <TextBlock Text="{Binding Status}"
-                                                               FontSize="11"
+                                                               FontSize="14"
                                                                FontWeight="SemiBold" />
                                                 </Border>
                                             </DataTemplate>
@@ -362,7 +432,7 @@
                             </DataGrid>
                         </Grid>
 
-                        <Border Grid.Row="3"
+                        <Border Grid.Row="4"
                                 Margin="12"
                                 Padding="12"
                                 CornerRadius="8"
@@ -382,13 +452,14 @@
                                         <TextBlock Text="{Binding FinalSucceeded, StringFormat=Успешно: {0}}" Margin="0,0,14,0" />
                                         <TextBlock Text="{Binding FinalFailed, StringFormat=Ошибок: {0}}" Margin="0,0,14,0" />
                                         <TextBlock Text="{Binding FinalConflicts, StringFormat=Конфликтов: {0}}" Margin="0,0,14,0" />
+                                        <TextBlock Text="{Binding FinalUnavailable, StringFormat=Недоступно: {0}}" Margin="0,0,14,0" />
                                         <TextBlock Text="{Binding FinalSkipped, StringFormat=Пропущено: {0}}" />
                                     </WrapPanel>
                                     <TextBlock Text="{Binding ResultFolder}"
                                                ToolTip="{Binding ResultFolder}"
                                                TextTrimming="CharacterEllipsis"
                                                Foreground="{StaticResource TextTertiaryBrush}"
-                                               FontSize="11"
+                                               FontSize="14"
                                                Margin="0,4,0,0" />
                                 </StackPanel>
                                 <Button Grid.Column="1"
@@ -420,7 +491,7 @@
                             </Grid.RowDefinitions>
                             <TextBlock Text="{Binding CurrentFile, StringFormat=Сейчас: {0}}"
                                        TextTrimming="CharacterEllipsis"
-                                       FontSize="11"
+                                       FontSize="14"
                                        Foreground="{StaticResource TextSecondaryBrush}" />
                             <ProgressBar Grid.Row="1"
                                          Height="6"
@@ -431,7 +502,7 @@
                         </Grid>
                         <TextBlock Text="Оригиналы не изменяются · Результаты сохраняются в _converted"
                                    Foreground="{StaticResource TextTertiaryBrush}"
-                                   FontSize="11"
+                                   FontSize="14"
                                    Visibility="{Binding ShowProgress, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
                         <ItemsControl ItemsSource="{Binding ErrorMessages}"
                                       MaxHeight="34"
@@ -441,7 +512,7 @@
                                 <DataTemplate>
                                     <TextBlock Text="{Binding}"
                                                Foreground="#FF9AAA"
-                                               FontSize="11"
+                                               FontSize="14"
                                                TextTrimming="CharacterEllipsis" />
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

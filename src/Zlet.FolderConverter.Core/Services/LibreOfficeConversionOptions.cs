@@ -9,4 +9,6 @@ public sealed record LibreOfficeConversionOptions
     public string? TemporaryRootPath { get; init; }
 
     public string? LocalSettingsPath { get; init; }
+
+    public bool IncludeSystemInstallationsForDevelopment { get; init; }
 }

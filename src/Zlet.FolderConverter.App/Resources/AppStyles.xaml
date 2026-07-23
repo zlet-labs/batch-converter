@@ -21,7 +21,7 @@
         <Setter Property="Background" Value="{StaticResource PageBackgroundBrush}" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="14" />
     </Style>
 
     <Style TargetType="TextBlock">
@@ -49,23 +49,23 @@
         <Setter Property="BorderBrush" Value="#375D84" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="14" />
-        <Setter Property="Padding" Value="12,6" />
+        <Setter Property="Padding" Value="14,7" />
     </Style>
 
     <Style x:Key="MetricLabelStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}" />
-        <Setter Property="FontSize" Value="10" />
+        <Setter Property="FontSize" Value="14" />
         <Setter Property="HorizontalAlignment" Value="Center" />
     </Style>
 
     <Style x:Key="MetricValueStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="17" />
+        <Setter Property="FontSize" Value="20" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="HorizontalAlignment" Value="Center" />
     </Style>
 
     <Style x:Key="PrimaryButtonStyle" TargetType="Button">
-        <Setter Property="Height" Value="38" />
+        <Setter Property="Height" Value="42" />
         <Setter Property="MinWidth" Value="132" />
         <Setter Property="Padding" Value="17,0" />
         <Setter Property="Background" Value="{StaticResource AccentBrush}" />
@@ -104,7 +104,7 @@
     </Style>
 
     <Style x:Key="SecondaryButtonStyle" TargetType="Button">
-        <Setter Property="Height" Value="38" />
+        <Setter Property="Height" Value="42" />
         <Setter Property="MinWidth" Value="82" />
         <Setter Property="Padding" Value="13,0" />
         <Setter Property="Background" Value="#17243A" />
@@ -136,6 +136,13 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <Style x:Key="CompactButtonStyle"
+           TargetType="Button"
+           BasedOn="{StaticResource SecondaryButtonStyle}">
+        <Setter Property="MinWidth" Value="96" />
+        <Setter Property="Padding" Value="12,0" />
     </Style>
 
     <Style x:Key="ToggleSwitchStyle" TargetType="CheckBox">
@@ -180,7 +187,7 @@
     </Style>
 
     <Style TargetType="ComboBox">
-        <Setter Property="Height" Value="32" />
+        <Setter Property="Height" Value="38" />
         <Setter Property="Background" Value="#17243A" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="BorderBrush" Value="#334764" />
@@ -278,7 +285,7 @@
         <Setter Property="CanUserReorderColumns" Value="False" />
         <Setter Property="CanUserSortColumns" Value="False" />
         <Setter Property="IsReadOnly" Value="True" />
-        <Setter Property="RowHeight" Value="39" />
+        <Setter Property="RowHeight" Value="40" />
         <Setter Property="AlternationCount" Value="2" />
         <Setter Property="SelectionMode" Value="Single" />
     </Style>
@@ -294,19 +301,19 @@
     </Style>
 
     <Style TargetType="DataGridColumnHeader">
-        <Setter Property="Background" Value="#B5142034" />
-        <Setter Property="Foreground" Value="#8998AF" />
-        <Setter Property="BorderBrush" Value="#1E2E47" />
+        <Setter Property="Background" Value="#E0192942" />
+        <Setter Property="Foreground" Value="#D9E4F2" />
+        <Setter Property="BorderBrush" Value="#304662" />
         <Setter Property="BorderThickness" Value="0,0,0,1" />
-        <Setter Property="Padding" Value="9,8" />
-        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Padding" Value="11,9" />
+        <Setter Property="FontSize" Value="14" />
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
 
     <Style TargetType="DataGridCell">
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Padding" Value="9,5" />
+        <Setter Property="Padding" Value="11,6" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Style.Triggers>
             <Trigger Property="IsSelected" Value="True">
@@ -320,5 +327,16 @@
         <Setter Property="Background" Value="#1B293D" />
         <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
         <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <Style TargetType="ToolTip">
+        <Setter Property="Background" Value="#F0142034" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="#4B668A" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="MaxWidth" Value="520" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="TextBlock.TextWrapping" Value="Wrap" />
     </Style>
 </ResourceDictionary>

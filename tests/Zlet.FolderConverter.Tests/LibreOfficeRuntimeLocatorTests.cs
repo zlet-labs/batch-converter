@@ -12,14 +12,51 @@ public sealed class LibreOfficeRuntimeLocatorTests : IDisposable
     public LibreOfficeRuntimeLocatorTests() => Directory.CreateDirectory(_rootPath);
 
     [Fact]
-    public void Locate_finds_explicit_runtime_directory()
+    public void Locate_prefers_environment_before_local_bundled_and_explicit_paths()
     {
-        var executable = CreateRuntime(_rootPath);
+        var environmentRuntime = Path.Combine(_rootPath, "environment");
+        var localRuntime = Path.Combine(_rootPath, "local");
+        var explicitRuntime = Path.Combine(_rootPath, "explicit");
+        var appBase = Path.Combine(_rootPath, "app");
+        var executable = CreateRuntime(environmentRuntime);
+        CreateRuntime(localRuntime);
+        CreateRuntime(explicitRuntime);
+        CreateRuntime(Path.Combine(appBase, "runtime", "libreoffice"));
+        var settingsPath = Path.Combine(_rootPath, "ZletFolderConverter.local.json");
+        File.WriteAllText(
+            settingsPath,
+            $$"""{"libreOfficePath":"{{EscapeJson(localRuntime)}}"}""");
         var locator = new LibreOfficeRuntimeLocator(
-            new LibreOfficeConversionOptions { ExplicitRuntimePath = _rootPath },
-            Path.Combine(_rootPath, "app"));
+            new LibreOfficeConversionOptions
+            {
+                ExplicitRuntimePath = explicitRuntime,
+                LocalSettingsPath = settingsPath
+            },
+            appBase,
+            () => environmentRuntime);
 
         var result = locator.Locate();
+
+        Assert.True(result.IsAvailable);
+        Assert.Equal(executable, result.ExecutablePath);
+    }
+
+    [Fact]
+    public void Locate_reads_ignored_local_setting_from_development_working_directory()
+    {
+        var appBase = Path.Combine(_rootPath, "app");
+        var runtime = Path.Combine(_rootPath, "local-runtime");
+        var executable = CreateRuntime(runtime);
+        var settingsPath = Path.Combine(_rootPath, "ZletFolderConverter.local.json");
+        File.WriteAllText(
+            settingsPath,
+            $$"""{"libreOfficePath":"{{EscapeJson(runtime)}}"}""");
+
+        var result = new LibreOfficeRuntimeLocator(
+            new LibreOfficeConversionOptions(),
+            appBase,
+            () => null,
+            _rootPath).Locate();
 
         Assert.True(result.IsAvailable);
         Assert.Equal(executable, result.ExecutablePath);
@@ -34,10 +71,39 @@ public sealed class LibreOfficeRuntimeLocatorTests : IDisposable
 
         var result = new LibreOfficeRuntimeLocator(
             new LibreOfficeConversionOptions(),
-            appBase).Locate();
+            appBase,
+            () => null,
+            Path.Combine(_rootPath, "working")).Locate();
 
         Assert.True(result.IsAvailable);
         Assert.Equal(executable, result.ExecutablePath);
+    }
+
+    [Fact]
+    public void Locate_uses_system_installation_only_for_development_self_check()
+    {
+        var systemRuntime = Path.Combine(_rootPath, "system");
+        var executable = CreateRuntime(systemRuntime);
+        var appBase = Path.Combine(_rootPath, "app");
+        var withoutOptIn = new LibreOfficeRuntimeLocator(
+            new LibreOfficeConversionOptions(),
+            appBase,
+            () => null,
+            Path.Combine(_rootPath, "working"),
+            [systemRuntime]).Locate();
+        var withOptIn = new LibreOfficeRuntimeLocator(
+            new LibreOfficeConversionOptions
+            {
+                IncludeSystemInstallationsForDevelopment = true
+            },
+            appBase,
+            () => null,
+            Path.Combine(_rootPath, "working"),
+            [systemRuntime]).Locate();
+
+        Assert.False(withoutOptIn.IsAvailable);
+        Assert.True(withOptIn.IsAvailable);
+        Assert.Equal(executable, withOptIn.ExecutablePath);
     }
 
     [Fact]
@@ -49,7 +115,9 @@ public sealed class LibreOfficeRuntimeLocatorTests : IDisposable
                 ExplicitRuntimePath = Path.Combine(_rootPath, "missing"),
                 LocalSettingsPath = Path.Combine(_rootPath, "missing.json")
             },
-            Path.Combine(_rootPath, "app")).Locate();
+            Path.Combine(_rootPath, "app"),
+            () => null,
+            Path.Combine(_rootPath, "working")).Locate();
 
         Assert.False(result.IsAvailable);
         Assert.Equal(string.Empty, result.ExecutablePath);
@@ -71,4 +139,7 @@ public sealed class LibreOfficeRuntimeLocatorTests : IDisposable
         File.WriteAllText(executable, "synthetic");
         return executable;
     }
+
+    private static string EscapeJson(string value) =>
+        value.Replace("\\", "\\\\", StringComparison.Ordinal);
 }

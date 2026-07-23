@@ -1,0 +1,64 @@
+name: Feature request
+description: Suggest a focused improvement for Zlet Folder Converter
+title: "Feature: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the user problem first. A file converter does not need to become a cloud platform merely because a dropdown looked lonely.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What task is difficult or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest useful workflow and expected result.
+    validations:
+      required: true
+
+  - type: input
+    id: formats
+    attributes:
+      label: Source and target formats
+      placeholder: XLSX → one CSV per visible sheet
+
+  - type: textarea
+    id: user-flow
+    attributes:
+      label: Expected user flow
+      placeholder: |
+        1. Select a folder.
+        2. Choose the conversion rule.
+        3. Review the preview.
+        4. Download or open the result.
+    validations:
+      required: true
+
+  - type: textarea
+    id: safety
+    attributes:
+      label: File-safety and privacy considerations
+      description: Explain overwrite, original-file, local-processing, licensing, or sensitive-data concerns.
+
+  - type: textarea
+    id: limitations
+    attributes:
+      label: Acceptable limitations
+      description: What can remain out of scope for the first useful version?
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I searched existing Issues for the same request.
+          required: true
+        - label: This request does not require attaching real confidential documents.
+          required: true

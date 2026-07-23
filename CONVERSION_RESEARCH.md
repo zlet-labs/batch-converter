@@ -10,12 +10,16 @@ solution. It reads one JSON request from redirected stdin, runs on an STA main
 thread, emits JSON lifecycle/result messages to stdout, and exits after one
 operation. The WPF process applies a timeout and remains responsive.
 
-The worker obtains the application HWND and resolves its PID through
-`GetWindowThreadProcessId`. Before activation it records existing PIDs for the
-specific Office application. A PID is eligible for timeout termination only
-when it was absent from that baseline and its process name and start timestamp
-still match. The implementation never kills all `WINWORD`, `EXCEL`, or
-`POWERPNT` processes.
+Before activation the worker records existing PIDs for the specific Office
+application. Immediately after COM activation it resolves the PID from the
+application HWND when that property is available. Word builds that do not
+publish `Application.Hwnd` use the single new `WINWORD` PID relative to the
+baseline. The worker then emits `Started` before changing any Office setting.
+On timeout/cancellation the WPF process terminates the worker, drains
+stdout/stderr for a bounded interval, and then rechecks ownership. A PID is
+eligible for termination only when it was absent from the baseline and its
+process name and start timestamp still match. The implementation never kills
+all `WINWORD`, `EXCEL`, or `POWERPNT` processes.
 
 ## Word
 
@@ -48,6 +52,9 @@ References:
 
 ## PowerPoint
 
+- If any `POWERPNT` process exists in the pre-activation baseline, the worker
+  returns `powerpoint_already_running` without creating COM automation,
+  changing settings, opening a presentation, or calling `Quit`.
 - `Visible = 0` (`msoFalse`)
 - `DisplayAlerts = 1` (`ppAlertsNone`)
 - `AutomationSecurity = 3`

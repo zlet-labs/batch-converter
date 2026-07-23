@@ -74,9 +74,7 @@ public sealed class MicrosoftOfficeConversionAdapter : IConversionAdapter
                     : new TemporaryOutputProductionResult(
                         false,
                         workerResult.ErrorCode,
-                        workerResult.TimedOut
-                            ? "Преобразование превысило допустимое время."
-                            : "Не удалось преобразовать файл в Microsoft Office.",
+                        ToUserMessage(workerResult),
                         workerResult.TimedOut,
                         workerResult.ExitCode,
                         workerResult.HasStandardOutput,
@@ -86,4 +84,14 @@ public sealed class MicrosoftOfficeConversionAdapter : IConversionAdapter
             "Преобразовано.",
             cancellationToken);
     }
+
+    private static string ToUserMessage(OfficeWorkerExecutionResult result) =>
+        result.ErrorCode switch
+        {
+            "powerpoint_already_running" =>
+                "PowerPoint уже запущен. Закройте его и повторите преобразование.",
+            _ when result.TimedOut =>
+                "Преобразование превысило допустимое время.",
+            _ => "Не удалось преобразовать файл в Microsoft Office."
+        };
 }

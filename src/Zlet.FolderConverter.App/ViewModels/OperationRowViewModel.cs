@@ -36,7 +36,11 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
             : Path.ChangeExtension(operation.RelativePath, operation.TargetExtension);
         Status = isNotSelected && status == OperationStatus.Ready
             ? "Не выбрано"
-            : LocalizeStatus(status, operation.Target, result?.Message ?? operation.Message);
+            : LocalizeStatus(
+                status,
+                operation.Target,
+                result?.Message ?? operation.Message,
+                result?.Diagnostic?.ErrorCode ?? string.Empty);
         StatusTone = status switch
         {
             OperationStatus.Ready or OperationStatus.Converting or OperationStatus.Succeeded => "Positive",
@@ -82,7 +86,8 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
     public static string LocalizeStatus(
         OperationStatus status,
         ConversionTarget target = ConversionTarget.Skip,
-        string message = "") => status switch
+        string message = "",
+        string errorCode = "") => status switch
     {
         OperationStatus.Ready when target == ConversionTarget.Copy => "Будет скопирован без изменений",
         OperationStatus.Ready => "Готово к преобразованию",
@@ -91,6 +96,8 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         OperationStatus.Succeeded when target == ConversionTarget.Copy => "Скопировано",
         OperationStatus.Succeeded => "Преобразовано",
         OperationStatus.Conflict => "Файл результата уже существует",
+        OperationStatus.Failed when errorCode == "powerpoint_already_running"
+                                    && !string.IsNullOrWhiteSpace(message) => message,
         OperationStatus.Failed => "Ошибка",
         OperationStatus.EngineUnavailable when !string.IsNullOrWhiteSpace(message) => message,
         OperationStatus.EngineUnavailable => "Требуется Microsoft Office",

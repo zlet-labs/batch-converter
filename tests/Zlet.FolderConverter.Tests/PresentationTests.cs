@@ -32,6 +32,35 @@ public sealed class PresentationTests : IDisposable
     }
 
     [Fact]
+    public void OperationRowViewModel_shows_running_powerpoint_message()
+    {
+        const string message =
+            "PowerPoint уже запущен. Закройте его и повторите преобразование.";
+        var operation = new PlannedOperation(
+            Path.Combine(_rootPath, "legacy.ppt"),
+            "legacy.ppt",
+            SourceFormat.Ppt,
+            ConversionTarget.Pptx,
+            ".pptx",
+            Path.Combine(_rootPath, "_converted", "legacy.pptx"),
+            true,
+            OperationStatus.Ready,
+            "Готово к преобразованию.",
+            Path.Combine(_rootPath, "_converted"),
+            _rootPath);
+        var result = new ConversionResult(
+            operation,
+            OperationStatus.Failed,
+            message,
+            new ConversionDiagnostic("powerpoint_already_running"));
+
+        var row = new OperationRowViewModel(operation, result);
+
+        Assert.Equal(message, row.Status);
+        Assert.Equal(message, row.Message);
+    }
+
+    [Fact]
     public void OperationRowViewModel_shows_relative_paths_and_russian_action()
     {
         var relative = Path.Combine("архив договоров", "old file.doc");

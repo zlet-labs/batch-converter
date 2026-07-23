@@ -21,6 +21,9 @@ PowerPoint versions, ZIP size, unpacked size, commit SHA, and tester name.
   - XLS is ready;
   - PPT says `Требуется Microsoft PowerPoint`;
   - the batch can still process DOC and XLS.
+- With PowerPoint already open, confirm PPT reports
+  `PowerPoint уже запущен. Закройте его и повторите преобразование.`;
+  confirm the user presentation stays open and DOC/XLS still process.
 - Confirm modern DOCX/XLSX/PPTX files say
   `Будет скопирован без изменений`.
 

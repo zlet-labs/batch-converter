@@ -18,6 +18,10 @@ Word, Excel, and PowerPoint are detected independently. A missing application
 disables only its own legacy format; it does not block the rest of a batch.
 Microsoft Office is not included in the portable package.
 
+PowerPoint uses a shared COM process. For user-document safety, PPT conversion
+is refused while `POWERPNT` is already running; close PowerPoint and retry.
+This restriction does not affect DOC, XLS, or unchanged PPTX copying.
+
 ## Safety model
 
 - The UI process never performs COM automation.
@@ -32,8 +36,11 @@ Microsoft Office is not included in the portable package.
 - Output is created in a temporary directory, validated as OOXML, copied to a
   same-directory staging file, and atomically moved to the final path.
 - Existing files and directories are never overwritten.
-- A timeout terminates the worker and only an Office PID proven to be a new
-  instance created by that worker. Processes are never killed by name.
+- The worker reports the owned Office PID immediately after COM activation and
+  before changing application settings.
+- A timeout first terminates the worker, briefly drains its lifecycle output,
+  and only then considers an Office PID proven to be a new worker-owned
+  instance. Processes are never killed by name.
 - Failure of one file does not stop later selected files.
 
 Technical diagnostics contain error codes and process metadata only. They do not

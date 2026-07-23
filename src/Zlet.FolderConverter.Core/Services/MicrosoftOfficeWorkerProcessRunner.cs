@@ -11,6 +11,8 @@ public sealed record MicrosoftOfficeWorkerOptions
         "Zlet.FolderConverter.OfficeWorker.exe");
 
     public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(2);
+
+    public TimeSpan ShutdownTimeout { get; init; } = TimeSpan.FromSeconds(2);
 }
 
 public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerRunner
@@ -52,12 +54,17 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
 
         IOfficeWorkerProcess? process = null;
         WorkerMessageState? state = null;
+        Task? outputTask = null;
+        Task<bool>? errorTask = null;
+        Task? waitTask = null;
+        var shutdownPerformed = false;
         try
         {
             process = _launcher.Start(_options.WorkerExecutablePath);
             state = new WorkerMessageState();
-            var outputTask = ReadMessagesAsync(process.StandardOutput, state);
-            var errorTask = ReadHasContentAsync(process.StandardError);
+            outputTask = ReadMessagesAsync(process.StandardOutput, state);
+            errorTask = ReadHasContentAsync(process.StandardError);
+            waitTask = process.WaitForExitAsync(CancellationToken.None);
 
             var requestJson = JsonSerializer.Serialize(request, JsonOptions);
             await process.StandardInput.WriteLineAsync(
@@ -65,19 +72,18 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
                 cancellationToken);
             process.StandardInput.Close();
 
-            var waitTask = process.WaitForExitAsync(CancellationToken.None);
             var delayTask = Task.Delay(_options.Timeout, cancellationToken);
             var completed = await Task.WhenAny(waitTask, delayTask);
             if (completed != waitTask)
             {
-                var ownership = state.GetOwnership();
-                if (ownership is not null)
-                {
-                    _officeProcessTerminator.TryTerminate(request.Application, ownership);
-                }
-
-                process.Kill();
-                await Task.WhenAny(waitTask, Task.Delay(TimeSpan.FromSeconds(2)));
+                await ShutdownWorkerAsync(
+                    process,
+                    waitTask,
+                    outputTask,
+                    errorTask,
+                    state,
+                    request.Application);
+                shutdownPerformed = true;
                 if (cancellationToken.IsCancellationRequested)
                 {
                     throw new OperationCanceledException(cancellationToken);
@@ -115,13 +121,17 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
         }
         catch (OperationCanceledException)
         {
-            var ownership = state?.GetOwnership();
-            if (ownership is not null)
+            if (!shutdownPerformed && process is not null && state is not null)
             {
-                _officeProcessTerminator.TryTerminate(request.Application, ownership);
+                await ShutdownWorkerAsync(
+                    process,
+                    waitTask,
+                    outputTask,
+                    errorTask,
+                    state,
+                    request.Application);
             }
 
-            process?.Kill();
             throw;
         }
         catch (Exception exception) when (exception is IOException
@@ -129,12 +139,60 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
                                            or System.ComponentModel.Win32Exception
                                            or JsonException)
         {
-            process?.Kill();
+            if (!shutdownPerformed && process is not null && state is not null)
+            {
+                await ShutdownWorkerAsync(
+                    process,
+                    waitTask,
+                    outputTask,
+                    errorTask,
+                    state,
+                    request.Application);
+            }
+
             return new(false, "worker_start_failure");
         }
         finally
         {
             process?.Dispose();
+        }
+    }
+
+    private async Task ShutdownWorkerAsync(
+        IOfficeWorkerProcess process,
+        Task? waitTask,
+        Task? outputTask,
+        Task<bool>? errorTask,
+        WorkerMessageState state,
+        OfficeApplicationKind application)
+    {
+        process.Kill();
+
+        var pending = new[] { waitTask, outputTask, errorTask }
+            .Where(task => task is not null)
+            .Select(task => IgnoreFailureAsync(task!))
+            .ToArray();
+        if (pending.Length > 0)
+        {
+            var drainTask = Task.WhenAll(pending);
+            await Task.WhenAny(drainTask, Task.Delay(_options.ShutdownTimeout));
+        }
+
+        var ownership = state.GetOwnership();
+        if (ownership is not null)
+        {
+            _officeProcessTerminator.TryTerminate(application, ownership);
+        }
+    }
+
+    private static async Task IgnoreFailureAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        catch (Exception)
+        {
         }
     }
 
@@ -323,15 +381,69 @@ internal interface IOwnedOfficeProcessTerminator
         OfficeProcessOwnership ownership);
 }
 
-internal sealed class OwnedOfficeProcessTerminator : IOwnedOfficeProcessTerminator
+internal interface IOfficeProcessLookup
 {
+    IOfficeProcessHandle? TryGet(int processId);
+}
+
+internal interface IOfficeProcessHandle : IDisposable
+{
+    string ProcessName { get; }
+    long StartTimeUtcTicks { get; }
+    void Kill();
+}
+
+internal sealed class SystemOfficeProcessLookup : IOfficeProcessLookup
+{
+    public IOfficeProcessHandle? TryGet(int processId)
+    {
+        try
+        {
+            return new SystemOfficeProcessHandle(Process.GetProcessById(processId));
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+}
+
+internal sealed class SystemOfficeProcessHandle(Process process)
+    : IOfficeProcessHandle
+{
+    public string ProcessName => process.ProcessName;
+    public long StartTimeUtcTicks => process.StartTime.ToUniversalTime().Ticks;
+    public void Kill() => process.Kill(entireProcessTree: false);
+    public void Dispose() => process.Dispose();
+}
+
+internal sealed class OwnedOfficeProcessTerminator
+    : IOwnedOfficeProcessTerminator
+{
+    private readonly IOfficeProcessLookup _processLookup;
+
+    public OwnedOfficeProcessTerminator()
+        : this(new SystemOfficeProcessLookup())
+    {
+    }
+
+    internal OwnedOfficeProcessTerminator(IOfficeProcessLookup processLookup)
+    {
+        _processLookup = processLookup;
+    }
+
     public bool TryTerminate(
         OfficeApplicationKind application,
         OfficeProcessOwnership ownership)
     {
         try
         {
-            using var process = Process.GetProcessById(ownership.ProcessId);
+            using var process = _processLookup.TryGet(ownership.ProcessId);
+            if (process is null)
+            {
+                return false;
+            }
+
             var expectedName = application switch
             {
                 OfficeApplicationKind.Word => "WINWORD",
@@ -340,12 +452,12 @@ internal sealed class OwnedOfficeProcessTerminator : IOwnedOfficeProcessTerminat
                 _ => string.Empty
             };
             if (!process.ProcessName.Equals(expectedName, StringComparison.OrdinalIgnoreCase)
-                || process.StartTime.ToUniversalTime().Ticks != ownership.StartTimeUtcTicks)
+                || process.StartTimeUtcTicks != ownership.StartTimeUtcTicks)
             {
                 return false;
             }
 
-            process.Kill(entireProcessTree: false);
+            process.Kill();
             return true;
         }
         catch (Exception exception) when (exception is ArgumentException

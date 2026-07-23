@@ -62,6 +62,33 @@ public sealed class MicrosoftOfficeConversionAdapterTests : IDisposable
         Assert.False(File.Exists(operation.TargetPath));
     }
 
+    [Fact]
+    public async Task Running_powerpoint_has_distinct_user_message()
+    {
+        var sourcePath = Path.Combine(_rootPath, "legacy.ppt");
+        await File.WriteAllTextAsync(sourcePath, "legacy fixture");
+        var adapter = new MicrosoftOfficeConversionAdapter(
+            OfficeApplicationKind.PowerPoint,
+            new MicrosoftOfficeCapabilityTests.FakeCapabilityDetector(
+                [OfficeApplicationKind.PowerPoint]),
+            new ErrorWorkerRunner("powerpoint_already_running"),
+            new OutputResultValidator());
+        var operation = CreateOperation(
+            sourcePath,
+            SourceFormat.Ppt,
+            ConversionTarget.Pptx);
+
+        var result = await adapter.ConvertAsync(
+            operation,
+            CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Failed, result.Status);
+        Assert.Equal("powerpoint_already_running", result.Diagnostic?.ErrorCode);
+        Assert.Equal(
+            "PowerPoint уже запущен. Закройте его и повторите преобразование.",
+            result.Message);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_rootPath))
@@ -70,19 +97,22 @@ public sealed class MicrosoftOfficeConversionAdapterTests : IDisposable
         }
     }
 
-    private PlannedOperation CreateOperation(string sourcePath)
+    private PlannedOperation CreateOperation(
+        string sourcePath,
+        SourceFormat sourceFormat = SourceFormat.Doc,
+        ConversionTarget target = ConversionTarget.Docx)
     {
         var relativePath = Path.GetFileName(sourcePath);
         return new PlannedOperation(
             sourcePath,
             relativePath,
-            SourceFormat.Doc,
-            ConversionTarget.Docx,
-            ".docx",
+            sourceFormat,
+            target,
+            target.ToExtension(),
             Path.Combine(
                 _rootPath,
                 "_converted",
-                Path.GetFileNameWithoutExtension(sourcePath) + ".docx"),
+                Path.GetFileNameWithoutExtension(sourcePath) + target.ToExtension()),
             true,
             OperationStatus.Ready,
             "Готово к преобразованию.",
@@ -127,5 +157,16 @@ public sealed class MicrosoftOfficeConversionAdapterTests : IDisposable
                 cancellationToken);
             return new OfficeWorkerExecutionResult(true);
         }
+    }
+
+    private sealed class ErrorWorkerRunner(string errorCode)
+        : IMicrosoftOfficeWorkerRunner
+    {
+        public bool IsAvailable => true;
+
+        public Task<OfficeWorkerExecutionResult> RunAsync(
+            OfficeWorkerRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new OfficeWorkerExecutionResult(false, errorCode));
     }
 }

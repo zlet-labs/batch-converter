@@ -1,97 +1,47 @@
 # Zlet Folder Converter
 
-Zlet Folder Converter - локальный Windows-прототип для сканирования папок со старыми офисными файлами и построения безопасного плана конвертации.
+Локальное Windows-приложение для подготовки JSON-файлов к загрузке в NotebookLM. Оно сканирует выбранную папку, показывает план операций и сохраняет отдельный результат для каждого исходника в `<выбранная папка>\_converted`. Исходные файлы не изменяются и не удаляются.
 
-Текущий прототип не выполняет реальную конвертацию документов. Он находит `.doc`, `.xls` и `.ppt`, предлагает пути результата в `_converted`, защищает существующие target-файлы и честно показывает статус `Unsupported`, пока embedded .NET adapter не пройдёт лицензионную проверку и synthetic validation.
+## Поддерживается
 
-## Статус прототипа
+- JSON → TXT;
+- JSON → Markdown;
+- пакетная обработка;
+- обработка подпапок с сохранением структуры;
+- полностью локальная работа;
+- portable Windows x64 без требования установленного .NET Runtime;
+- защита существующих файлов и директорий от перезаписи;
+- продолжение batch после ошибки отдельного файла.
 
-- Сканирование папки: есть.
-- Preview операций: есть.
-- Проверка конфликтов target-файлов: есть.
-- Portable Windows x64 packaging: есть.
-- Реальная DOC/XLS/PPT конвертация: пока не поддерживается.
+## Не поддерживается
 
-## Поддерживаемые mappings
+- DOC → DOCX;
+- XLS → XLSX;
+- PPT → PPTX;
+- XLSX → CSV;
+- PDF/OCR;
+- объединение JSON в один документ;
+- cloud conversion.
 
-В этом прототипе нет поддерживаемых mappings.
+Офисные файлы отображаются в preview со статусом «Не поддерживается». Приложение не использует Office COM, LibreOffice, внешние CLI и сетевые сервисы.
 
-## Неподдерживаемые mappings
-
-- `.doc` в `.docx`
-- `.xls` в `.xlsx`
-- `.ppt` в `.pptx`
-
-Эти mappings останутся неподдерживаемыми, пока полностью embedded .NET adapter не пройдёт проверку лицензии и synthetic validation.
-
-## Privacy и безопасность файлов
-
-- Приложение работает локально.
-- Файлы не отправляются на сервер или cloud API.
-- Нет backend, analytics, telemetry или remote config.
-- Microsoft Office и LibreOffice не требуются.
-- Оригиналы не изменяются, не удаляются, не перемещаются и не перезаписываются.
-- Существующие target-файлы считаются конфликтами и не перезаписываются.
-- Планируемые результаты находятся в `<selected-folder>/_converted`.
-
-## Требования Windows
-
-- Windows 10 или Windows 11 x64.
-- Для portable ZIP не нужно устанавливать .NET Runtime.
-- Для разработки нужен .NET 8 SDK.
-
-## Build
+## Сборка и проверка
 
 ```powershell
 dotnet restore FolderConverter.sln
 dotnet build FolderConverter.sln -c Release
-```
-
-## Tests
-
-```powershell
 dotnet test FolderConverter.sln -c Release
-```
-
-## Portable ZIP
-
-Основной формат распространения ранних версий - portable self-contained ZIP для Windows x64.
-
-Пользователь:
-
-1. Скачивает ZIP.
-2. Распаковывает его в локальную папку.
-3. Запускает `ZletFolderConverter.exe`.
-
-Локальная сборка portable package:
-
-```powershell
 powershell -ExecutionPolicy Bypass -File scripts/publish-portable.ps1
 ```
 
-С версией:
+Portable ZIP создаётся в `artifacts\portable\win-x64`.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/publish-portable.ps1 -Version "0.1.0-alpha"
-```
+## Использование
 
-Артефакты создаются в `artifacts/portable/win-x64` и не коммитятся.
+1. Выберите папку.
+2. Настройте подпапки и формат `TXT` или `Markdown`.
+3. Нажмите «Проверить файлы» и изучите preview.
+4. Нажмите «Преобразовать файлы».
+5. Откройте путь `_converted`, показанный в итоговом отчёте.
 
-## Текущие ограничения
-
-- Conversion adapter пока не включён.
-- Нет installer, auto-update, service, registry writes, file associations, scheduled tasks или shell extensions.
-- Нет drag and drop.
-- Clean-machine verification агентом не выполнялась.
-
-## Исследование конвертации
-
-См. [CONVERSION_RESEARCH.md](CONVERSION_RESEARCH.md).
-
-## Security и reporting
-
-Не используйте реальные чувствительные документы как test fixtures. Если нашли проблему безопасности, создайте GitHub issue без вложения приватных файлов или содержимого документов.
-
-## Лицензия
-
-MIT. См. [LICENSE](LICENSE).
+Невалидный JSON получает статус «Ошибка», но остальные файлы продолжают обрабатываться. Существующие результаты не перезаписываются.

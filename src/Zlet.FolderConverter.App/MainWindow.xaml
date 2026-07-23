@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Zlet Folder Converter"
-        Height="700"
+        Height="720"
         MinHeight="600"
         Width="1100"
         MinWidth="820"
@@ -36,7 +36,7 @@
                            FontSize="26"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource TextPrimaryBrush}" />
-                <TextBlock Text="Локальная проверка и конвертация старых офисных файлов"
+                <TextBlock Text="Подготовка JSON-файлов для загрузки в NotebookLM"
                            Margin="0,4,0,0"
                            Foreground="{StaticResource TextSecondaryBrush}" />
             </StackPanel>
@@ -70,6 +70,7 @@
                         Content="Выбрать папку"
                         Style="{StaticResource SecondaryButtonStyle}"
                         Margin="0,0,10,0"
+                        IsEnabled="{Binding CanChangeSettings}"
                         Click="ChooseFolderButton_Click" />
 
                 <Border Grid.Column="1"
@@ -89,7 +90,8 @@
                 <CheckBox Grid.Column="2"
                           Content="Включать подпапки"
                           IsChecked="{Binding IncludeSubfolders}"
-                          Margin="0,0,14,0" />
+                          Margin="0,0,14,0"
+                          IsEnabled="{Binding CanChangeSettings}" />
 
                 <Button Grid.Column="3"
                         Content="Проверить файлы"
@@ -114,7 +116,7 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Text="Возможности прототипа"
+                    <TextBlock Text="Подготовка файлов для NotebookLM"
                                FontSize="16"
                                FontWeight="SemiBold" />
                     <Grid Grid.Row="1" Margin="0,10,0,0">
@@ -128,15 +130,15 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Поиск файлов DOC, XLS и PPT" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="JSON → TXT/MD поддерживается" Foreground="{StaticResource TextSecondaryBrush}" />
                         <TextBlock Grid.Row="0" Grid.Column="1" Text="Проверка конфликтов имён" Foreground="{StaticResource TextSecondaryBrush}" />
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Предварительный просмотр результата" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0" />
                         <Border Grid.Row="1" Grid.Column="1" Margin="0,2,0,0" Background="#211C3E" CornerRadius="5" Padding="8,4" HorizontalAlignment="Left">
-                            <TextBlock Text="Конвертация пока не реализована" Foreground="#D7CBFF" />
+                            <TextBlock Text="DOC/XLS/PPT: конвертация недоступна" Foreground="#D7CBFF" />
                         </Border>
                         <TextBlock Grid.Row="2"
                                    Grid.ColumnSpan="2"
-                                   Text="Сейчас приложение анализирует папку и показывает план обработки. Конвертация появится после выбора безопасного встроенного движка."
+                                   Text="Файлы обрабатываются локально. Оригиналы не изменяются, результаты сохраняются в корневой папке _converted."
                                    Foreground="{StaticResource TextSecondaryBrush}"
                                    TextWrapping="Wrap"
                                    Margin="0,10,0,0" />
@@ -147,7 +149,7 @@
             <ItemsControl Grid.Column="1" ItemsSource="{Binding FormatCards}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <UniformGrid Columns="3" />
+                        <UniformGrid Columns="4" />
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
@@ -181,14 +183,45 @@
         <Grid Grid.Row="3">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <TextBlock Text="{Binding StateMessage}"
-                       Foreground="{StaticResource TextSecondaryBrush}"
-                       Margin="2,0,0,8" />
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding StateMessage}"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0">
+                    <TextBlock Text="Результат:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox ItemsSource="{Binding OutputFormats}"
+                              SelectedItem="{Binding SelectedOutputFormat}"
+                              IsEnabled="{Binding CanChangeSettings}"
+                              Width="110" />
+                </StackPanel>
+                <Button Grid.Column="2"
+                        Content="Преобразовать файлы"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        IsEnabled="{Binding CanConvert}"
+                        Click="ConvertButton_Click" />
+            </Grid>
 
             <Border Grid.Row="1"
+                    Background="#102B4D"
+                    BorderBrush="#2F6FAB"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="10,6"
+                    Margin="0,0,0,8"
+                    Visibility="{Binding HasSummary, Converter={StaticResource BoolToVisibilityConverter}}">
+                <TextBlock Text="{Binding SummaryMessage}" TextWrapping="Wrap" Foreground="#BFE7FF" />
+            </Border>
+
+            <Border Grid.Row="2"
                     Style="{StaticResource PanelBorderStyle}"
                     Padding="0">
                 <Grid>

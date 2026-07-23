@@ -1,35 +1,27 @@
-Zlet Folder Converter
-Zlet Labs
+Zlet Folder Converter — portable Windows x64
+================================================
 
-Prototype status
-This is an early Windows x64 prototype. It can scan a selected folder, build a safe operation preview, and show which legacy Office formats are currently unsupported.
+Назначение
+----------
+Локальная подготовка JSON-файлов для NotebookLM:
+- JSON -> TXT
+- JSON -> Markdown
+- пакетная обработка и подпапки
 
-Requirements
-- Windows 10 or Windows 11 x64.
-- No administrator rights required.
-- No .NET Runtime installation required for the portable self-contained ZIP.
-- Microsoft Office is not required.
-- LibreOffice is not required.
+Запуск
+------
+1. Распакуйте ZIP в обычную папку.
+2. Запустите ZletFolderConverter.exe без прав администратора.
+3. Выберите папку и формат результата.
+4. Нажмите «Проверить файлы», затем «Преобразовать файлы».
+5. Результаты находятся в корневой папке _converted.
 
-How to run
-1. Extract the ZIP file to a local folder.
-2. Run ZletFolderConverter.exe.
-3. Select a folder with synthetic or test DOC, XLS, or PPT files.
-4. Review the planned operations and status messages.
+Установка .NET Runtime, Microsoft Office и подключение к интернету не требуются.
+Исходные файлы не изменяются. Существующие файлы и директории не перезаписываются.
 
-Privacy and file safety
-- Documents are processed locally.
-- Files are not uploaded to the network.
-- Original files are not changed, deleted, moved, or overwritten.
-- Future conversion outputs will be created under _converted.
+Не поддерживается
+-----------------
+DOC -> DOCX, XLS -> XLSX, PPT -> PPTX, XLSX -> CSV, PDF/OCR,
+объединение JSON и cloud conversion.
 
-Supported mappings
-- None in this prototype.
-
-Unsupported mappings
-- DOC to DOCX: unsupported until an embedded converter passes license and synthetic validation.
-- XLS to XLSX: unsupported until an embedded converter passes license and synthetic validation.
-- PPT to PPTX: unsupported until an embedded converter passes license and synthetic validation.
-
-Project
-https://github.com/zlet-labs/folder-converter
+При ошибке JSON обработка остальных файлов продолжается.

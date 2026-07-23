@@ -15,6 +15,9 @@ public sealed class DocumentFormatDetectorTests
     [InlineData("sample.ppt", DocumentFormat.Ppt)]
     [InlineData("sample.PPT", DocumentFormat.Ppt)]
     [InlineData("sample.PpT", DocumentFormat.Ppt)]
+    [InlineData("sample.json", DocumentFormat.Json)]
+    [InlineData("sample.JSON", DocumentFormat.Json)]
+    [InlineData("sample.JsOn", DocumentFormat.Json)]
     public void TryDetect_detects_supported_formats_case_insensitively(
         string fileName,
         DocumentFormat expectedFormat)
@@ -29,11 +32,18 @@ public sealed class DocumentFormatDetectorTests
     [InlineData(DocumentFormat.Doc, ".docx")]
     [InlineData(DocumentFormat.Xls, ".xlsx")]
     [InlineData(DocumentFormat.Ppt, ".pptx")]
+    [InlineData(DocumentFormat.Json, ".txt")]
     public void GetTargetExtension_returns_expected_mapping(
         DocumentFormat format,
         string expectedExtension)
     {
         Assert.Equal(expectedExtension, DocumentFormatDetector.GetTargetExtension(format));
+    }
+
+    [Fact]
+    public void GetTargetExtension_maps_json_to_markdown()
+    {
+        Assert.Equal(".md", DocumentFormatDetector.GetTargetExtension(DocumentFormat.Json, OutputFormat.Markdown));
     }
 
     [Theory]

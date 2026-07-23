@@ -25,6 +25,7 @@ public sealed class DefaultConversionAdapterResolver : IConversionAdapterResolve
     {
         return
         [
+            new JsonConversionAdapter(new OutputResultValidator()),
             new UnsupportedConversionAdapter(
                 DocumentFormat.Doc,
                 ".docx",

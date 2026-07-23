@@ -51,7 +51,61 @@ public sealed class FileSystemFolderScannerTests : IDisposable
 
         Assert.Single(result.Files);
         Assert.Equal("source.doc", result.Files[0].RelativePath);
-        Assert.True(FileSystemFolderScanner.IsConvertedDirectory(Path.Combine(_rootPath, "_converted")));
+        Assert.True(FileSystemFolderScanner.IsConvertedDirectory(Path.Combine(_rootPath, "_converted"), _rootPath));
+    }
+
+    [Fact]
+    public async Task ScanAsync_excludes_only_root_converted_directory()
+    {
+        WriteSyntheticFile(Path.Combine("_converted", "ignored.json"));
+        WriteSyntheticFile(Path.Combine("archive", "_converted", "old.json"));
+
+        var result = await ScanAsync(includeSubfolders: true);
+
+        var file = Assert.Single(result.Files);
+        Assert.Equal(Path.Combine("archive", "_converted", "old.json"), file.RelativePath);
+    }
+
+    [Fact]
+    public async Task ScanAsync_detects_json_and_counts_it()
+    {
+        WriteSyntheticFile("one.JSON");
+
+        var result = await ScanAsync(includeSubfolders: false);
+
+        Assert.Equal(1, result.JsonCount);
+        Assert.Equal(DocumentFormat.Json, Assert.Single(result.Files).Format);
+    }
+
+    [Fact]
+    public async Task ScanAsync_does_not_follow_reparse_directory_when_supported()
+    {
+        var external = Path.Combine(Path.GetTempPath(), "zlet-folder-converter-link-target", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        File.WriteAllText(Path.Combine(external, "linked.json"), "{}");
+        var link = Path.Combine(_rootPath, "linked");
+        try
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(link, external);
+            }
+            catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
+            {
+                return;
+            }
+
+            var result = await ScanAsync(includeSubfolders: true);
+            Assert.DoesNotContain(result.Files, file => file.RelativePath.Contains("linked", StringComparison.Ordinal));
+            Assert.True(FileSystemFolderScanner.IsReparseDirectory(link));
+        }
+        finally
+        {
+            if (Directory.Exists(external))
+            {
+                Directory.Delete(external, recursive: true);
+            }
+        }
     }
 
     [Fact]

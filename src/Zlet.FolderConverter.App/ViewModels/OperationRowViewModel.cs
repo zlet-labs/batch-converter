@@ -3,76 +3,59 @@ using Zlet.FolderConverter.Core.Models;
 
 namespace Zlet.FolderConverter.App.ViewModels;
 
-public sealed class OperationRowViewModel(PlannedOperation operation)
+public sealed class OperationRowViewModel
 {
-    public string SourcePath { get; } = operation.SourcePath;
-
-    public string RelativePath { get; } = operation.RelativePath;
-
-    public string FilePath { get; } = operation.RelativePath;
-
-    public string SourceFormat { get; } = operation.SourceFormat.ToString().ToUpperInvariant();
-
-    public string TargetFormat { get; } = operation.TargetFormat;
-
-    public string FormatLabel { get; } =
-        $"{operation.SourceFormat.ToString().ToUpperInvariant()} -> {operation.TargetFormat}";
-
-    public string TargetPath { get; } = operation.TargetPath;
-
-    public string FutureRelativePath { get; } =
-        Path.Combine("_converted", Path.ChangeExtension(operation.RelativePath, operation.TargetExtension));
-
-    public string Status { get; } = LocalizeStatus(operation.Status);
-
-    public string StatusTone { get; } = operation.Status switch
+    public OperationRowViewModel(PlannedOperation operation, ConversionResult? result = null)
     {
-        OperationStatus.Ready or OperationStatus.Succeeded => "Positive",
-        OperationStatus.Conflict => "Warning",
-        OperationStatus.Failed => "Danger",
-        _ => "Neutral"
+        Operation = operation;
+        var status = result?.Status ?? operation.Status;
+        SourcePath = operation.SourcePath;
+        FilePath = operation.RelativePath;
+        FormatLabel = $"{operation.SourceFormat.ToString().ToUpperInvariant()} → {operation.TargetFormat}";
+        TargetPath = operation.TargetPath;
+        FutureRelativePath = Path.Combine(
+            "_converted",
+            Path.ChangeExtension(operation.RelativePath, operation.TargetExtension));
+        Status = LocalizeStatus(status);
+        StatusTone = status switch
+        {
+            OperationStatus.Ready or OperationStatus.Succeeded => "Positive",
+            OperationStatus.Conflict => "Warning",
+            OperationStatus.Failed => "Danger",
+            _ => "Neutral"
+        };
+        Message = result?.Message ?? CreateShortMessage(status);
+    }
+
+    public PlannedOperation Operation { get; }
+    public string SourcePath { get; }
+    public string FilePath { get; }
+    public string FormatLabel { get; }
+    public string TargetPath { get; }
+    public string FutureRelativePath { get; }
+    public string Status { get; }
+    public string StatusTone { get; }
+    public string Message { get; }
+    public bool HasTechnicalMessage => false;
+
+    public static string LocalizeStatus(OperationStatus status) => status switch
+    {
+        OperationStatus.Ready => "Готово к обработке",
+        OperationStatus.Succeeded => "Преобразовано",
+        OperationStatus.Unsupported => "Не поддерживается",
+        OperationStatus.Conflict => "Конфликт",
+        OperationStatus.Failed => "Ошибка",
+        OperationStatus.Skipped => "Пропущено",
+        _ => "Неизвестно"
     };
 
-    public string Message { get; } = CreateShortMessage(operation);
-
-    public bool HasTechnicalMessage =>
-        Message.Contains("adapter", StringComparison.OrdinalIgnoreCase)
-        || Message.Contains("embedded", StringComparison.OrdinalIgnoreCase)
-        || Message.Contains("synthetic", StringComparison.OrdinalIgnoreCase)
-        || Message.Contains("license", StringComparison.OrdinalIgnoreCase)
-        || Message.Contains("mapping", StringComparison.OrdinalIgnoreCase);
-
-    public static string LocalizeStatus(OperationStatus status)
+    private static string CreateShortMessage(OperationStatus status) => status switch
     {
-        return status switch
-        {
-            OperationStatus.Unsupported => "Пока не поддерживается",
-            OperationStatus.Conflict => "Конфликт",
-            OperationStatus.Ready => "Готово",
-            OperationStatus.Failed => "Ошибка",
-            OperationStatus.Succeeded => "Готово",
-            OperationStatus.Skipped => "Пропущено",
-            _ => "Неизвестно"
-        };
-    }
-
-    private static string CreateShortMessage(PlannedOperation operation)
-    {
-        return operation.Status switch
-        {
-            OperationStatus.Unsupported =>
-                $"Конвертация {operation.SourceFormat.ToString().ToUpperInvariant()} появится позже.",
-            OperationStatus.Conflict =>
-                "Файл результата уже существует.",
-            OperationStatus.Ready =>
-                "Файл можно обработать.",
-            OperationStatus.Failed =>
-                "Не удалось обработать файл.",
-            OperationStatus.Succeeded =>
-                "Файл обработан.",
-            OperationStatus.Skipped =>
-                "Файл пропущен.",
-            _ => "Статус неизвестен."
-        };
-    }
+        OperationStatus.Unsupported => "Конвертация недоступна.",
+        OperationStatus.Conflict => "Файл или папка результата уже существует.",
+        OperationStatus.Ready => "Файл можно обработать.",
+        OperationStatus.Failed => "Не удалось обработать файл.",
+        OperationStatus.Succeeded => "Файл преобразован.",
+        _ => "Файл пропущен."
+    };
 }

@@ -8,6 +8,12 @@ public static class DocumentFormatDetector
     {
         var extension = Path.GetExtension(path);
 
+        if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            format = DocumentFormat.Json;
+            return true;
+        }
+
         if (extension.Equals(".doc", StringComparison.OrdinalIgnoreCase))
         {
             format = DocumentFormat.Doc;
@@ -30,10 +36,11 @@ public static class DocumentFormatDetector
         return false;
     }
 
-    public static string GetTargetExtension(DocumentFormat format)
+    public static string GetTargetExtension(DocumentFormat format, OutputFormat outputFormat = OutputFormat.TXT)
     {
         return format switch
         {
+            DocumentFormat.Json => outputFormat == OutputFormat.Markdown ? ".md" : ".txt",
             DocumentFormat.Doc => ".docx",
             DocumentFormat.Xls => ".xlsx",
             DocumentFormat.Ppt => ".pptx",

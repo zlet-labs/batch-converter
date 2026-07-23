@@ -70,7 +70,8 @@ public sealed class FileSystemFolderScanner : IFolderScanner
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (IsConvertedDirectory(directoryPath))
+                if (IsConvertedDirectory(directoryPath, fullRootPath)
+                    || IsReparseDirectory(directoryPath))
                 {
                     continue;
                 }
@@ -113,12 +114,25 @@ public sealed class FileSystemFolderScanner : IFolderScanner
         return Path.GetFileName(filePath).StartsWith("~$", StringComparison.Ordinal);
     }
 
-    public static bool IsConvertedDirectory(string directoryPath)
+    public static bool IsConvertedDirectory(string directoryPath, string rootPath)
     {
-        return string.Equals(
-            Path.GetFileName(directoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
-            ConvertedFolderName,
-            StringComparison.OrdinalIgnoreCase);
+        var outputPath = Path.GetFullPath(Path.Combine(rootPath, ConvertedFolderName))
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var candidatePath = Path.GetFullPath(directoryPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return string.Equals(candidatePath, outputPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsReparseDirectory(string directoryPath)
+    {
+        try
+        {
+            return (File.GetAttributes(directoryPath) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (Exception exception) when (IsRecoverableFileSystemException(exception))
+        {
+            return true;
+        }
     }
 
     private static bool IsRecoverableFileSystemException(Exception exception)

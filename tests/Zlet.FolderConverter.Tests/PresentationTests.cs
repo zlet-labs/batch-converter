@@ -15,11 +15,11 @@ public sealed class PresentationTests : IDisposable
     }
 
     [Theory]
-    [InlineData(OperationStatus.Unsupported, "Пока не поддерживается")]
+    [InlineData(OperationStatus.Unsupported, "Не поддерживается")]
     [InlineData(OperationStatus.Conflict, "Конфликт")]
-    [InlineData(OperationStatus.Ready, "Готово")]
+    [InlineData(OperationStatus.Ready, "Готово к обработке")]
     [InlineData(OperationStatus.Failed, "Ошибка")]
-    [InlineData(OperationStatus.Succeeded, "Готово")]
+    [InlineData(OperationStatus.Succeeded, "Преобразовано")]
     [InlineData(OperationStatus.Skipped, "Пропущено")]
     public void OperationRowViewModel_localizes_statuses(
         OperationStatus status,
@@ -48,7 +48,7 @@ public sealed class PresentationTests : IDisposable
 
         var row = new OperationRowViewModel(operation);
 
-        Assert.Equal("Конвертация DOC появится позже.", row.Message);
+        Assert.Equal("Конвертация недоступна.", row.Message);
         Assert.False(row.HasTechnicalMessage);
     }
 
@@ -61,7 +61,7 @@ public sealed class PresentationTests : IDisposable
         await viewModel.ScanAsync();
 
         Assert.Single(viewModel.Operations);
-        Assert.Equal("Пока не поддерживается", viewModel.Operations[0].Status);
+        Assert.Equal("Не поддерживается", viewModel.Operations[0].Status);
         Assert.Empty(viewModel.ErrorMessages);
         Assert.False(viewModel.HasErrors);
     }
@@ -73,7 +73,7 @@ public sealed class PresentationTests : IDisposable
 
         await viewModel.ScanAsync();
 
-        Assert.Equal("Подходящие файлы не найдены.", viewModel.EmptyStateMessage);
+        Assert.Equal("JSON, DOC, XLS или PPT не найдены. Выберите другую папку или включите подпапки.", viewModel.EmptyStateMessage);
         Assert.Equal("Проверка завершена. Найдено файлов: 0.", viewModel.StateMessage);
     }
 
@@ -91,7 +91,7 @@ public sealed class PresentationTests : IDisposable
         Assert.Equal(1, viewModel.DocCount);
         Assert.Equal(1, viewModel.XlsCount);
         Assert.Equal(1, viewModel.PptCount);
-        Assert.Equal("1 файл", viewModel.FormatCards[0].CountText);
+        Assert.Equal("1 файл", viewModel.FormatCards[1].CountText);
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public sealed class PresentationTests : IDisposable
 
         var row = Assert.Single(viewModel.Operations);
         Assert.Equal("Конфликт", row.Status);
-        Assert.Equal("Файл результата уже существует.", row.Message);
+        Assert.Equal("Файл или папка результата уже существует.", row.Message);
         Assert.Empty(viewModel.ErrorMessages);
     }
 
@@ -121,7 +121,44 @@ public sealed class PresentationTests : IDisposable
         await viewModel.ScanAsync();
 
         Assert.Empty(viewModel.Operations);
-        Assert.Equal("Подходящие файлы не найдены.", viewModel.EmptyStateMessage);
+        Assert.Equal("JSON, DOC, XLS или PPT не найдены. Выберите другую папку или включите подпапки.", viewModel.EmptyStateMessage);
+    }
+
+    [Fact]
+    public async Task MainWindowViewModel_uses_original_root_for_scan_and_plan_when_selection_changes()
+    {
+        var otherRoot = Path.Combine(_rootPath, "other");
+        Directory.CreateDirectory(otherRoot);
+        var scanner = new CallbackScanner(_rootPath);
+        var planner = new RecordingPlanner();
+        var viewModel = new MainWindowViewModel(scanner, planner)
+        {
+            SelectedFolder = _rootPath
+        };
+        scanner.Callback = () => viewModel.SelectedFolder = otherRoot;
+
+        await viewModel.ScanAsync();
+
+        Assert.Equal(_rootPath, scanner.ReceivedRoot);
+        Assert.Equal(_rootPath, planner.ReceivedRoot);
+    }
+
+    [Fact]
+    public async Task MainWindowViewModel_converts_ready_json_and_disables_repeat_without_rescan()
+    {
+        var sourcePath = Path.Combine(_rootPath, "users.json");
+        File.WriteAllText(sourcePath, """{"name":"Тест 😀"}""");
+        var viewModel = CreateViewModel();
+
+        await viewModel.ScanAsync();
+        Assert.True(viewModel.CanConvert);
+        await viewModel.ConvertAsync();
+
+        Assert.False(viewModel.CanConvert);
+        Assert.Contains("Успешно: 1", viewModel.SummaryMessage);
+        Assert.Equal("Преобразовано", Assert.Single(viewModel.Operations).Status);
+        Assert.True(File.Exists(Path.Combine(_rootPath, "_converted", "users.txt")));
+        Assert.Equal("""{"name":"Тест 😀"}""", File.ReadAllText(sourcePath));
     }
 
     public void Dispose()
@@ -163,5 +200,32 @@ public sealed class PresentationTests : IDisposable
         var path = Path.Combine(_rootPath, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, "synthetic test fixture");
+    }
+
+    private sealed class CallbackScanner(string root) : IFolderScanner
+    {
+        public Action? Callback { get; set; }
+        public string? ReceivedRoot { get; private set; }
+
+        public Task<ScanResult> ScanAsync(string rootPath, bool includeSubfolders, CancellationToken cancellationToken)
+        {
+            ReceivedRoot = rootPath;
+            Callback?.Invoke();
+            return Task.FromResult(new ScanResult(root, [], []));
+        }
+    }
+
+    private sealed class RecordingPlanner : IConversionPlanner
+    {
+        public string? ReceivedRoot { get; private set; }
+
+        public IReadOnlyList<PlannedOperation> CreatePlan(
+            ScanResult scanResult,
+            string rootPath,
+            OutputFormat outputFormat = OutputFormat.TXT)
+        {
+            ReceivedRoot = rootPath;
+            return [];
+        }
     }
 }

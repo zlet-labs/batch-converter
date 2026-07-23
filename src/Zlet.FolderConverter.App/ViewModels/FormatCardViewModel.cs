@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace Zlet.FolderConverter.App.ViewModels;
 
-public sealed class FormatCardViewModel(string name) : INotifyPropertyChanged
+public sealed class FormatCardViewModel(string name, bool isSupported = false) : INotifyPropertyChanged
 {
     private int _count;
 
@@ -31,8 +31,8 @@ public sealed class FormatCardViewModel(string name) : INotifyPropertyChanged
     public string CountText => FormatFileCount(Count);
 
     public string StatusText => Count == 0
-        ? "0 файлов"
-        : "Пока без конвертации";
+        ? (isSupported ? "JSON → TXT/MD" : "Конвертация недоступна")
+        : (isSupported ? "Конвертация доступна" : "Конвертация недоступна");
 
     public static string FormatFileCount(int count)
     {

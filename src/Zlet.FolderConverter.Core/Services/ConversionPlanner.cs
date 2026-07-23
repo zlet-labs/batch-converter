@@ -4,7 +4,10 @@ namespace Zlet.FolderConverter.Core.Services;
 
 public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver) : IConversionPlanner
 {
-    public IReadOnlyList<PlannedOperation> CreatePlan(ScanResult scanResult, string rootPath)
+    public IReadOnlyList<PlannedOperation> CreatePlan(
+        ScanResult scanResult,
+        string rootPath,
+        OutputFormat outputFormat = OutputFormat.TXT)
     {
         ArgumentNullException.ThrowIfNull(scanResult);
         ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
@@ -13,19 +16,22 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
         var targetRootPath = Path.Combine(fullRootPath, "_converted");
 
         return scanResult.Files
-            .Select(file => CreateOperation(file, targetRootPath))
+            .Select(file => CreateOperation(file, targetRootPath, outputFormat))
             .ToArray();
     }
 
-    private PlannedOperation CreateOperation(ScannedFile file, string targetRootPath)
+    private PlannedOperation CreateOperation(
+        ScannedFile file,
+        string targetRootPath,
+        OutputFormat outputFormat)
     {
-        var targetExtension = DocumentFormatDetector.GetTargetExtension(file.Format);
+        var targetExtension = DocumentFormatDetector.GetTargetExtension(file.Format, outputFormat);
         var targetRelativePath = Path.ChangeExtension(file.RelativePath, targetExtension);
         var targetPath = Path.Combine(targetRootPath, targetRelativePath);
         var adapter = adapterResolver.Resolve(file.Format);
         var adapterAvailable = adapter?.IsAvailable == true;
 
-        if (File.Exists(targetPath))
+        if (File.Exists(targetPath) || Directory.Exists(targetPath))
         {
             return new PlannedOperation(
                 file.SourcePath,

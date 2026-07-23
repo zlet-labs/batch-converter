@@ -14,7 +14,8 @@ public partial class MainWindow : Window
         InitializeComponent();
         _viewModel = new MainWindowViewModel(
             new FileSystemFolderScanner(),
-            new ConversionPlanner(new DefaultConversionAdapterResolver()));
+            new ConversionPlanner(new DefaultConversionAdapterResolver()),
+            new ConversionProcessor(new DefaultConversionAdapterResolver()));
         DataContext = _viewModel;
     }
 
@@ -22,7 +23,7 @@ public partial class MainWindow : Window
     {
         using var dialog = new Forms.FolderBrowserDialog
         {
-            Description = "Выберите папку с файлами DOC, XLS или PPT",
+            Description = "Выберите папку с JSON-файлами",
             UseDescriptionForTitle = true
         };
 
@@ -51,6 +52,23 @@ public partial class MainWindow : Window
         {
             _viewModel.AddError($"Не удалось проверить папку: {exception.Message}");
             _viewModel.StateMessage = "Проверка завершилась ошибкой.";
+        }
+    }
+
+    private async void ConvertButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await _viewModel.ConvertAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            _viewModel.StateMessage = "Обработка отменена.";
+        }
+        catch (Exception exception)
+        {
+            _viewModel.AddError($"Не удалось завершить обработку: {exception.Message}");
+            _viewModel.StateMessage = "Обработка завершилась ошибкой.";
         }
     }
 }

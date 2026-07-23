@@ -1,44 +1,136 @@
 # Zlet Folder Converter
 
-Local Windows desktop tool for preparing JSON files for NotebookLM. It scans a selected folder, previews every operation, and writes one result per source file under `<selected folder>\_converted`. Source files are never modified or deleted.
+> Local batch file conversion for Windows, with previews, safe output paths, and no cloud uploads.
 
-## Supported
+**Zlet Labs** · **Alpha**
 
-- JSON → TXT and JSON → Markdown
-- batch processing
-- optional subfolder scanning with relative folder structure preserved
-- local, offline conversion
-- portable self-contained Windows x64 package
-- conflict detection for existing files and directories
-- per-file failures without stopping the batch
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-2563EB?logo=windows11&logoColor=white)](https://github.com/zlet-labs/folder-converter)
+[![.NET](https://img.shields.io/badge/.NET-8-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![License](https://img.shields.io/badge/License-MIT-22C55E)](LICENSE)
 
-## Not supported
+Zlet Folder Converter scans a folder, previews every planned operation, and writes converted files under `<selected folder>\_converted`. Source files are never modified, moved, deleted, or overwritten.
 
-- DOC → DOCX, XLS → XLSX, PPT → PPTX
-- XLSX → CSV
-- PDF or OCR
-- combining multiple JSON files
-- cloud conversion
+> **Current alpha scope:** JSON → TXT and JSON → Markdown. Legacy Office conversion is not available in the current build.
 
-Office files are shown in preview as unsupported; the application does not use Office COM, LibreOffice, external CLIs, or network services.
+[Русская документация](README_RU.md)
 
-## Build and test
+## Download and releases
+
+No public release has been published yet.
+
+Verified portable Windows builds will be published on the [GitHub Releases page](https://github.com/zlet-labs/folder-converter/releases). Release notes are tracked in [CHANGELOG.md](CHANGELOG.md).
+
+Do not use GitHub's automatically generated **Source code** archives as the Windows application. A usable release must contain the portable application package and its required runtime files.
+
+## What it does
+
+- scans one folder or a folder tree;
+- finds supported source files without entering the root `_converted` output directory;
+- previews source-to-target paths before writing anything;
+- converts each supported file independently;
+- preserves relative subfolder structure;
+- reports successes, conflicts, unsupported files, and per-file errors;
+- continues processing when one file fails.
+
+## Why it exists
+
+Old folders often contain mixed formats, duplicated copies, and files that need conversion before they can be reused. This project aims to make that work explicit and safe: select a folder, review the plan, convert, then copy or move the results where they belong.
+
+No account, dashboard, upload queue, or cloud service is required. Humanity may survive without another onboarding funnel.
+
+## Supported formats
+
+| Source | Output | Status |
+|---|---|---|
+| JSON | TXT | Supported |
+| JSON | Markdown | Supported |
+| DOC | DOCX | Not supported in the current alpha |
+| XLS | XLSX | Not supported in the current alpha |
+| PPT | PPTX | Not supported in the current alpha |
+
+Extension matching is case-insensitive. JSON output is UTF-8 and preserves Unicode content.
+
+## Current limitations
+
+- Windows x64 only;
+- no DOC, XLS, or PPT conversion in the current alpha;
+- no XLSX-to-CSV, PDF conversion, OCR, or JSON merging;
+- existing target files and directories are treated as conflicts and are not overwritten;
+- there is no installer, auto-update, file association, telemetry, or cloud synchronization;
+- visual fidelity claims are not made for formats that are not implemented and verified.
+
+## Privacy and file safety
+
+- processing is local;
+- files are not uploaded;
+- originals remain unchanged;
+- output stays under the selected root `_converted` folder;
+- existing output paths are protected from overwrite;
+- root `_converted`, Office temporary files, and reparse directories are skipped during scanning;
+- errors are isolated per file;
+- logs and reports must not contain document contents, secrets, or credentials.
+
+Use synthetic or sanitized files when reporting a problem. Do not attach private customer, work, financial, identity, or medical documents to public issues.
+
+## Run the application
+
+When a release is available:
+
+1. Open [GitHub Releases](https://github.com/zlet-labs/folder-converter/releases).
+2. Download the Windows portable ZIP attached to the release.
+3. Extract the complete archive to a local folder.
+4. Run `ZletFolderConverter.exe`.
+5. Select a source folder, review the preview, and start conversion.
+6. Find results under the source folder's `_converted` directory.
+
+## Build from source
+
+Requirements:
+
+- Windows 10 or Windows 11 x64;
+- .NET 8 SDK;
+- PowerShell for portable packaging.
 
 ```powershell
+git clone https://github.com/zlet-labs/folder-converter.git
+cd folder-converter
 dotnet restore FolderConverter.sln
 dotnet build FolderConverter.sln -c Release
 dotnet test FolderConverter.sln -c Release
 powershell -ExecutionPolicy Bypass -File scripts/publish-portable.ps1
 ```
 
-The portable ZIP is created under `artifacts\portable\win-x64`.
+Portable artifacts are created under `artifacts\portable\win-x64` and are not committed to Git.
 
-## Usage
+## Project structure
 
-1. Select a folder.
-2. Choose whether to include subfolders and select `TXT` or `Markdown`.
-3. Click **Проверить файлы** and review paths and conflicts.
-4. Click **Преобразовать файлы**.
-5. Open the `_converted` folder shown in the final summary.
+```text
+src/
+  Zlet.FolderConverter.App/     WPF application and presentation layer
+  Zlet.FolderConverter.Core/    scanning, planning, conversion, and validation
+tests/
+  Zlet.FolderConverter.Tests/   unit and filesystem tests
+docs/                            verification and release documentation
+scripts/                         local packaging scripts
+.github/                         issue, pull request, and release configuration
+```
 
-Invalid JSON is reported as an error for that file. Existing outputs are never overwritten.
+## Conversion research
+
+The repository documents rejected and investigated conversion approaches in [CONVERSION_RESEARCH.md](CONVERSION_RESEARCH.md). Product claims must follow verified implementation, licensing, and clean-machine testing, not wishful architecture diagrams.
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Bug reports and feature requests have dedicated templates under `.github/ISSUE_TEMPLATE`.
+
+## Security
+
+Read [SECURITY.md](SECURITY.md) before reporting a vulnerability. Never publish sensitive source documents, credentials, tokens, or local user paths as evidence.
+
+## Release process
+
+Maintainer guidance is documented in [docs/RELEASING.md](docs/RELEASING.md). Public binaries belong in GitHub Releases, not in the repository history.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

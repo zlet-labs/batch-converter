@@ -62,7 +62,49 @@ public sealed class JsonConversionAdapterTests : IDisposable
         Assert.Equal(OperationStatus.Failed, result.Status);
         Assert.StartsWith("Некорректный JSON:", result.Message);
         Assert.False(File.Exists(operation.TargetPath));
+        var outputDirectory = Path.GetDirectoryName(operation.TargetPath);
+        Assert.False(Directory.Exists(outputDirectory)
+            && Directory.EnumerateFiles(outputDirectory, "*.tmp").Any());
         Assert.Equal("""{"value": }""", await File.ReadAllTextAsync(sourcePath));
+    }
+
+    [Theory]
+    [InlineData("outside.txt")]
+    [InlineData("prefix.txt")]
+    public async Task ConvertAsync_rejects_target_outside_output_root(string scenario)
+    {
+        var sourcePath = Write("source.json", "{}");
+        var outputRoot = Path.Combine(_rootPath, "_converted");
+        var targetPath = scenario == "outside.txt"
+            ? Path.Combine(outputRoot, "..", "outside.txt")
+            : Path.Combine(_rootPath, "_converted-other", "prefix.txt");
+        var operation = CreateOperation(sourcePath, "source.txt", ".txt") with
+        {
+            TargetPath = targetPath
+        };
+
+        var result = await new JsonConversionAdapter(new OutputResultValidator())
+            .ConvertAsync(operation, CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Failed, result.Status);
+        Assert.Equal("Недопустимый путь результата.", result.Message);
+        Assert.False(File.Exists(Path.GetFullPath(targetPath)));
+    }
+
+    [Fact]
+    public async Task ConvertAsync_rejects_missing_or_substituted_output_root()
+    {
+        var sourcePath = Write("source.json", "{}");
+        var operation = CreateOperation(sourcePath, "source.txt", ".txt") with
+        {
+            OutputRootPath = string.Empty
+        };
+
+        var result = await new JsonConversionAdapter(new OutputResultValidator())
+            .ConvertAsync(operation, CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Failed, result.Status);
+        Assert.False(File.Exists(operation.TargetPath));
     }
 
     [Fact]
@@ -79,6 +121,19 @@ public sealed class JsonConversionAdapterTests : IDisposable
         Assert.Equal(1, summary.Succeeded);
         Assert.True(File.Exists(good.TargetPath));
         Assert.False(File.Exists(bad.TargetPath));
+    }
+
+    [Fact]
+    public async Task Processor_honors_cancellation()
+    {
+        var operation = CreateOperation(Write("source.json", "{}"), "source.txt", ".txt");
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => new ConversionProcessor(new DefaultConversionAdapterResolver())
+                .ProcessAsync([operation], cancellation.Token));
+        Assert.False(File.Exists(operation.TargetPath));
     }
 
     [Fact]
@@ -125,7 +180,8 @@ public sealed class JsonConversionAdapterTests : IDisposable
             Path.Combine(_rootPath, "_converted", targetRelativePath),
             true,
             OperationStatus.Ready,
-            "ready");
+            "ready",
+            Path.Combine(_rootPath, "_converted"));
 
     private sealed class TrackingValidator : IOutputResultValidator
     {

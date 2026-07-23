@@ -8,7 +8,8 @@ public sealed record PlannedOperation(
     string TargetPath,
     bool AdapterAvailable,
     OperationStatus Status,
-    string Message)
+    string Message,
+    string OutputRootPath = "")
 {
     public string TargetFormat => TargetExtension.TrimStart('.').ToUpperInvariant();
 }

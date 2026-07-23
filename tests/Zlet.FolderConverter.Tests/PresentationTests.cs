@@ -161,6 +161,51 @@ public sealed class PresentationTests : IDisposable
         Assert.Equal("""{"name":"Тест 😀"}""", File.ReadAllText(sourcePath));
     }
 
+    [Fact]
+    public async Task MainWindowViewModel_repeated_scan_after_conversion_shows_conflict()
+    {
+        File.WriteAllText(Path.Combine(_rootPath, "source.json"), "{}");
+        var viewModel = CreateViewModel();
+
+        await viewModel.ScanAsync();
+        await viewModel.ConvertAsync();
+        await viewModel.ScanAsync();
+
+        var row = Assert.Single(viewModel.Operations);
+        Assert.Equal("Конфликт", row.Status);
+        Assert.False(viewModel.CanConvert);
+    }
+
+    [Fact]
+    public async Task MainWindowViewModel_output_format_change_invalidates_preview()
+    {
+        File.WriteAllText(Path.Combine(_rootPath, "source.json"), "{}");
+        var viewModel = CreateViewModel();
+        await viewModel.ScanAsync();
+        Assert.True(viewModel.CanConvert);
+
+        viewModel.SelectedOutputFormat = OutputFormat.Markdown;
+
+        Assert.Empty(viewModel.Operations);
+        Assert.False(viewModel.CanConvert);
+        Assert.Equal("Требуется повторная проверка.", viewModel.StateMessage);
+    }
+
+    [Fact]
+    public async Task MainWindowViewModel_folder_change_invalidates_preview()
+    {
+        File.WriteAllText(Path.Combine(_rootPath, "source.json"), "{}");
+        var nextFolder = Path.Combine(_rootPath, "next");
+        Directory.CreateDirectory(nextFolder);
+        var viewModel = CreateViewModel();
+        await viewModel.ScanAsync();
+
+        viewModel.SelectedFolder = nextFolder;
+
+        Assert.Empty(viewModel.Operations);
+        Assert.False(viewModel.CanConvert);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_rootPath))

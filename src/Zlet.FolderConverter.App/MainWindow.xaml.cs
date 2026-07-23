@@ -48,9 +48,9 @@ public partial class MainWindow : Window
         {
             _viewModel.StateMessage = "Проверка отменена.";
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            _viewModel.AddError($"Не удалось проверить папку: {exception.Message}");
+            _viewModel.AddError("Не удалось проверить папку. Повторите попытку или выберите другую папку.");
             _viewModel.StateMessage = "Проверка завершилась ошибкой.";
         }
     }
@@ -65,9 +65,9 @@ public partial class MainWindow : Window
         {
             _viewModel.StateMessage = "Обработка отменена.";
         }
-        catch (Exception exception)
+        catch (Exception)
         {
-            _viewModel.AddError($"Не удалось завершить обработку: {exception.Message}");
+            _viewModel.AddError("Не удалось завершить обработку. Проверьте доступ к папке и повторите попытку.");
             _viewModel.StateMessage = "Обработка завершилась ошибкой.";
         }
     }

@@ -91,7 +91,7 @@ public sealed class FileSystemFolderScanner : IFolderScanner
         }
         catch (Exception exception) when (IsRecoverableFileSystemException(exception))
         {
-            errors.Add(new ScanError(directoryPath, exception.Message));
+            errors.Add(new ScanError(directoryPath, "Нет доступа к файлам в этой папке."));
             return [];
         }
     }
@@ -104,7 +104,7 @@ public sealed class FileSystemFolderScanner : IFolderScanner
         }
         catch (Exception exception) when (IsRecoverableFileSystemException(exception))
         {
-            errors.Add(new ScanError(directoryPath, exception.Message));
+            errors.Add(new ScanError(directoryPath, "Нет доступа к вложенным папкам."));
             return [];
         }
     }

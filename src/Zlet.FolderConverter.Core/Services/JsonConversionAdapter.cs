@@ -22,7 +22,7 @@ public sealed class JsonConversionAdapter(IOutputResultValidator validator) : IC
         string? temporaryPath = null;
         try
         {
-            if (!IsTargetInsideOutputRoot(operation))
+            if (!IsSafeTargetPath(operation))
             {
                 return new ConversionResult(operation, OperationStatus.Failed, "Недопустимый путь результата.");
             }
@@ -136,16 +136,46 @@ public sealed class JsonConversionAdapter(IOutputResultValidator validator) : IC
             : "файл имеет неверный формат.";
     }
 
-    private static bool IsTargetInsideOutputRoot(PlannedOperation operation)
+    private static bool IsSafeTargetPath(PlannedOperation operation)
     {
-        var parts = operation.RelativePath.Split(
-            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
-            StringSplitOptions.RemoveEmptyEntries);
-        var sourcePath = Path.GetFullPath(operation.SourcePath);
-        var rootPath = Path.GetFullPath(Path.Combine(sourcePath, Path.Combine(Enumerable.Repeat("..", parts.Length).ToArray())));
-        var outputRoot = Path.GetFullPath(Path.Combine(rootPath, "_converted"))
+        if (string.IsNullOrWhiteSpace(operation.OutputRootPath))
+        {
+            return false;
+        }
+
+        var outputRoot = Path.GetFullPath(operation.OutputRootPath)
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var targetPath = Path.GetFullPath(operation.TargetPath);
-        return targetPath.StartsWith(outputRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        if (!targetPath.StartsWith(outputRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var relativeTarget = Path.GetRelativePath(outputRoot, targetPath);
+        if (Path.IsPathRooted(relativeTarget)
+            || relativeTarget.Equals("..", StringComparison.Ordinal)
+            || relativeTarget.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        for (var directory = Path.GetDirectoryName(targetPath);
+             directory is not null
+             && directory.StartsWith(outputRoot, StringComparison.OrdinalIgnoreCase);
+             directory = Path.GetDirectoryName(directory))
+        {
+            if (Directory.Exists(directory)
+                && (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+            {
+                return false;
+            }
+
+            if (string.Equals(directory, outputRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                break;
+            }
+        }
+
+        return true;
     }
 }

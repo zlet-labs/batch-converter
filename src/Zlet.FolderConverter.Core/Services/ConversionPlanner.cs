@@ -41,7 +41,8 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
                 targetPath,
                 adapterAvailable,
                 OperationStatus.Conflict,
-                "Target file already exists and will not be overwritten.");
+                "Target file already exists and will not be overwritten.",
+                targetRootPath);
         }
 
         if (!adapterAvailable)
@@ -54,7 +55,8 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
                 targetPath,
                 false,
                 OperationStatus.Unsupported,
-                adapter?.AvailabilityMessage ?? "No confirmed embedded converter is available for this format.");
+                adapter?.AvailabilityMessage ?? "No confirmed embedded converter is available for this format.",
+                targetRootPath);
         }
 
         return new PlannedOperation(
@@ -65,6 +67,7 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
             targetPath,
             true,
             OperationStatus.Ready,
-            "Ready to convert with a confirmed embedded adapter.");
+            "Ready to convert with a confirmed embedded adapter.",
+            targetRootPath);
     }
 }

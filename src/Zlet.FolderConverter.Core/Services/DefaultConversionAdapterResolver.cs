@@ -4,7 +4,7 @@ namespace Zlet.FolderConverter.Core.Services;
 
 public sealed class DefaultConversionAdapterResolver : IConversionAdapterResolver
 {
-    private readonly IReadOnlyDictionary<DocumentFormat, IConversionAdapter> _adapters;
+    private readonly IReadOnlyList<IConversionAdapter> _adapters;
 
     public DefaultConversionAdapterResolver()
         : this(CreateDefaultAdapters())
@@ -13,31 +13,24 @@ public sealed class DefaultConversionAdapterResolver : IConversionAdapterResolve
 
     public DefaultConversionAdapterResolver(IEnumerable<IConversionAdapter> adapters)
     {
-        _adapters = adapters.ToDictionary(adapter => adapter.SourceFormat);
+        _adapters = adapters.ToArray();
     }
 
-    public IConversionAdapter? Resolve(DocumentFormat sourceFormat)
-    {
-        return _adapters.GetValueOrDefault(sourceFormat);
-    }
+    public IConversionAdapter? Resolve(SourceFormat sourceFormat, ConversionTarget target) =>
+        _adapters.FirstOrDefault(adapter => adapter.CanConvert(sourceFormat, target));
 
     private static IConversionAdapter[] CreateDefaultAdapters()
     {
+        var options = new LibreOfficeConversionOptions();
+        var validator = new OutputResultValidator();
         return
         [
-            new JsonConversionAdapter(new OutputResultValidator()),
-            new UnsupportedConversionAdapter(
-                DocumentFormat.Doc,
-                ".docx",
-                "DOC to DOCX is unsupported until an embedded converter passes license and synthetic validation."),
-            new UnsupportedConversionAdapter(
-                DocumentFormat.Xls,
-                ".xlsx",
-                "XLS to XLSX is unsupported until an embedded converter passes license and synthetic validation."),
-            new UnsupportedConversionAdapter(
-                DocumentFormat.Ppt,
-                ".pptx",
-                "PPT to PPTX is unsupported until an embedded converter passes license and synthetic validation.")
+            new JsonConversionAdapter(validator),
+            new LibreOfficeConversionAdapter(
+                new LibreOfficeRuntimeLocator(options),
+                new LibreOfficeProcessRunner(),
+                validator,
+                options)
         ];
     }
 }

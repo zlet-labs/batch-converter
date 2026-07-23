@@ -2,5 +2,5 @@ namespace Zlet.FolderConverter.Core.Services;
 
 public interface IOutputResultValidator
 {
-    bool IsSuccessfulOutput(string targetPath);
+    Models.OutputValidationResult Validate(string targetPath, Models.ConversionTarget target);
 }

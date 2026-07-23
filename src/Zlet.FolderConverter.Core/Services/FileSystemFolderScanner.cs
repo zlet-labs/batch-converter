@@ -52,13 +52,11 @@ public sealed class FileSystemFolderScanner : IFolderScanner
                     continue;
                 }
 
-                if (!DocumentFormatDetector.TryDetect(filePath, out var format))
-                {
-                    continue;
-                }
-
                 var relativePath = Path.GetRelativePath(fullRootPath, filePath);
-                files.Add(new ScannedFile(filePath, relativePath, format));
+                files.Add(new ScannedFile(
+                    filePath,
+                    relativePath,
+                    DocumentFormatDetector.Detect(filePath)));
             }
 
             if (!includeSubfolders)

@@ -7,13 +7,13 @@ namespace Zlet.FolderConverter.Core.Services;
 
 public sealed class JsonConversionAdapter(IOutputResultValidator validator) : IConversionAdapter
 {
-    public DocumentFormat SourceFormat => DocumentFormat.Json;
-
-    public string TargetExtension => ".txt";
-
     public bool IsAvailable => true;
 
-    public string AvailabilityMessage => "JSON conversion is available locally.";
+    public string AvailabilityMessage => "JSON-преобразование доступно локально.";
+
+    public bool CanConvert(SourceFormat sourceFormat, ConversionTarget target) =>
+        sourceFormat == SourceFormat.Json
+        && target is ConversionTarget.Txt or ConversionTarget.Markdown;
 
     public async Task<ConversionResult> ConvertAsync(
         PlannedOperation operation,
@@ -22,7 +22,7 @@ public sealed class JsonConversionAdapter(IOutputResultValidator validator) : IC
         string? temporaryPath = null;
         try
         {
-            if (!IsSafeTargetPath(operation))
+            if (!OutputPathGuard.IsSafeTargetPath(operation.TargetPath, operation.OutputRootPath))
             {
                 return new ConversionResult(operation, OperationStatus.Failed, "Недопустимый путь результата.");
             }
@@ -51,18 +51,28 @@ public sealed class JsonConversionAdapter(IOutputResultValidator validator) : IC
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
                 cancellationToken);
 
-            if (!validator.IsSuccessfulOutput(temporaryPath))
+            var temporaryValidation = validator.Validate(temporaryPath, operation.Target);
+            if (!temporaryValidation.IsValid)
             {
-                throw new IOException("Проверка результата не пройдена.");
+                return new ConversionResult(
+                    operation,
+                    OperationStatus.Failed,
+                    "Формат результата не прошёл проверку.",
+                    new ConversionDiagnostic(temporaryValidation.ErrorCode));
             }
 
             File.Move(temporaryPath, operation.TargetPath, overwrite: false);
             temporaryPath = null;
 
-            if (!validator.IsSuccessfulOutput(operation.TargetPath))
+            var finalValidation = validator.Validate(operation.TargetPath, operation.Target);
+            if (!finalValidation.IsValid)
             {
                 File.Delete(operation.TargetPath);
-                throw new IOException("Проверка результата не пройдена.");
+                return new ConversionResult(
+                    operation,
+                    OperationStatus.Failed,
+                    "Формат результата не прошёл проверку.",
+                    new ConversionDiagnostic(finalValidation.ErrorCode));
             }
 
             return new ConversionResult(operation, OperationStatus.Succeeded, "Преобразовано.");
@@ -73,15 +83,24 @@ public sealed class JsonConversionAdapter(IOutputResultValidator validator) : IC
                 operation,
                 OperationStatus.Failed,
                 $"Некорректный JSON: {CreateJsonError(exception)}",
-                exception);
+                new ConversionDiagnostic("invalid_json"));
         }
-        catch (IOException exception) when (File.Exists(operation.TargetPath) || Directory.Exists(operation.TargetPath))
+        catch (IOException) when (File.Exists(operation.TargetPath) || Directory.Exists(operation.TargetPath))
         {
-            return new ConversionResult(operation, OperationStatus.Conflict, "Файл или папка результата уже существует.", exception);
+            return new ConversionResult(operation, OperationStatus.Conflict, "Файл результата уже существует.");
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            return new ConversionResult(operation, OperationStatus.Failed, "Не удалось записать результат.", exception);
+            var message = File.Exists(operation.SourcePath)
+                ? "Не удалось записать результат."
+                : "Не удалось открыть исходный файл.";
+            return new ConversionResult(
+                operation,
+                OperationStatus.Failed,
+                message,
+                new ConversionDiagnostic(exception is UnauthorizedAccessException
+                    ? "access_denied"
+                    : "io_failure"));
         }
         finally
         {
@@ -136,46 +155,4 @@ public sealed class JsonConversionAdapter(IOutputResultValidator validator) : IC
             : "файл имеет неверный формат.";
     }
 
-    private static bool IsSafeTargetPath(PlannedOperation operation)
-    {
-        if (string.IsNullOrWhiteSpace(operation.OutputRootPath))
-        {
-            return false;
-        }
-
-        var outputRoot = Path.GetFullPath(operation.OutputRootPath)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var targetPath = Path.GetFullPath(operation.TargetPath);
-        if (!targetPath.StartsWith(outputRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var relativeTarget = Path.GetRelativePath(outputRoot, targetPath);
-        if (Path.IsPathRooted(relativeTarget)
-            || relativeTarget.Equals("..", StringComparison.Ordinal)
-            || relativeTarget.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        for (var directory = Path.GetDirectoryName(targetPath);
-             directory is not null
-             && directory.StartsWith(outputRoot, StringComparison.OrdinalIgnoreCase);
-             directory = Path.GetDirectoryName(directory))
-        {
-            if (Directory.Exists(directory)
-                && (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
-            {
-                return false;
-            }
-
-            if (string.Equals(directory, outputRoot, StringComparison.OrdinalIgnoreCase))
-            {
-                break;
-            }
-        }
-
-        return true;
-    }
 }

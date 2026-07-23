@@ -16,10 +16,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _includeSubfolders = true;
     private bool _isScanning;
     private bool _isConverting;
-    private OutputFormat _selectedOutputFormat = OutputFormat.TXT;
-    private string _stateMessage = "Выберите папку с JSON-файлами.";
-    private string _emptyStateMessage = "Выберите папку, затем нажмите «Проверить файлы».";
-    private string _summaryMessage = string.Empty;
+    private string _stateMessage = "Выберите папку и найдите файлы.";
+    private string _emptyStateMessage = "Preview появится после сканирования папки.";
+    private RuleSet _ruleSet = RuleSet.CreateDefault();
+    private ScanResult? _lastScan;
+    private string _scanRoot = string.Empty;
+    private PreviewFilterOption _selectedPreviewFilter;
+    private int _foundCount;
+    private int _readyCount;
+    private int _skippedCount;
+    private int _conflictCount;
+    private int _errorCount;
+    private double _progressPercent;
+    private string _currentFile = string.Empty;
+    private bool _hasFinalReport;
+    private int _finalSucceeded;
+    private int _finalFailed;
+    private int _finalConflicts;
+    private int _finalSkipped;
+    private string _resultFolder = string.Empty;
 
     public MainWindowViewModel(
         IFolderScanner folderScanner,
@@ -30,19 +45,26 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _conversionPlanner = conversionPlanner;
         _conversionProcessor = conversionProcessor
             ?? new ConversionProcessor(new DefaultConversionAdapterResolver());
+        PreviewFilters =
+        [
+            new(PreviewFilter.All, "Все"),
+            new(PreviewFilter.Convert, "К преобразованию"),
+            new(PreviewFilter.Skip, "Не трогаем"),
+            new(PreviewFilter.Conflicts, "Конфликты"),
+            new(PreviewFilter.Errors, "Ошибки")
+        ];
+        _selectedPreviewFilter = PreviewFilters[0];
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public ObservableCollection<RuleRowViewModel> FormatRules { get; } = [];
     public ObservableCollection<OperationRowViewModel> Operations { get; } = [];
     public ObservableCollection<string> ErrorMessages { get; } = [];
-    public ObservableCollection<FormatCardViewModel> FormatCards { get; } =
-    [
-        new("JSON", true),
-        new("DOC"),
-        new("XLS"),
-        new("PPT")
-    ];
-    public IReadOnlyList<OutputFormat> OutputFormats { get; } = Enum.GetValues<OutputFormat>();
+    public IReadOnlyList<PreviewFilterOption> PreviewFilters { get; }
+
+    public IEnumerable<OperationRowViewModel> VisibleOperations =>
+        Operations.Where(MatchesSelectedFilter).ToArray();
 
     public string SelectedFolder
     {
@@ -51,7 +73,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             if (SetProperty(ref _selectedFolder, value))
             {
-                InvalidatePreview();
+                InvalidateScan("Папка изменена. Нажмите «Найти файлы».");
                 NotifyAvailability();
             }
         }
@@ -64,19 +86,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             if (SetProperty(ref _includeSubfolders, value))
             {
-                InvalidatePreview();
+                InvalidateScan("Настройка подпапок изменена. Нажмите «Найти файлы».");
             }
         }
     }
 
-    public OutputFormat SelectedOutputFormat
+    public PreviewFilterOption SelectedPreviewFilter
     {
-        get => _selectedOutputFormat;
+        get => _selectedPreviewFilter;
         set
         {
-            if (SetProperty(ref _selectedOutputFormat, value))
+            if (value is not null && SetProperty(ref _selectedPreviewFilter, value))
             {
-                InvalidatePreview();
+                OnPropertyChanged(nameof(VisibleOperations));
             }
         }
     }
@@ -101,18 +123,59 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _isConverting, value))
             {
                 NotifyAvailability();
+                OnPropertyChanged(nameof(ShowProgress));
             }
         }
     }
 
     public bool IsBusy => IsScanning || IsConverting;
     public bool CanScan => !IsBusy && Directory.Exists(SelectedFolder);
-    public bool CanConvert => !IsBusy && Operations.Any(row => row.Operation.Status == OperationStatus.Ready);
+    public bool CanConvert => !IsBusy && ReadyCount > 0;
     public bool CanChangeSettings => !IsBusy;
-    public int JsonCount { get; private set; }
-    public int DocCount { get; private set; }
-    public int XlsCount { get; private set; }
-    public int PptCount { get; private set; }
+    public bool HasRules => FormatRules.Count > 0;
+    public bool HasPreview => Operations.Count > 0;
+    public bool HasErrors => ErrorMessages.Count > 0;
+    public bool ShowProgress => IsConverting;
+    public bool CanOpenResult => Directory.Exists(ResultFolder);
+
+    public int FoundCount
+    {
+        get => _foundCount;
+        private set => SetProperty(ref _foundCount, value);
+    }
+
+    public int ReadyCount
+    {
+        get => _readyCount;
+        private set
+        {
+            if (SetProperty(ref _readyCount, value))
+            {
+                OnPropertyChanged(nameof(CanConvert));
+                OnPropertyChanged(nameof(ConvertButtonText));
+            }
+        }
+    }
+
+    public int SkippedCount
+    {
+        get => _skippedCount;
+        private set => SetProperty(ref _skippedCount, value);
+    }
+
+    public int ConflictCount
+    {
+        get => _conflictCount;
+        private set => SetProperty(ref _conflictCount, value);
+    }
+
+    public int ErrorCount
+    {
+        get => _errorCount;
+        private set => SetProperty(ref _errorCount, value);
+    }
+
+    public string ConvertButtonText => $"Преобразовать {ReadyCount} файлов";
 
     public string StateMessage
     {
@@ -126,27 +189,64 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _emptyStateMessage, value);
     }
 
-    public string SummaryMessage
+    public double ProgressPercent
     {
-        get => _summaryMessage;
+        get => _progressPercent;
+        private set => SetProperty(ref _progressPercent, value);
+    }
+
+    public string CurrentFile
+    {
+        get => _currentFile;
+        private set => SetProperty(ref _currentFile, value);
+    }
+
+    public bool HasFinalReport
+    {
+        get => _hasFinalReport;
+        private set => SetProperty(ref _hasFinalReport, value);
+    }
+
+    public int FinalSucceeded
+    {
+        get => _finalSucceeded;
+        private set => SetProperty(ref _finalSucceeded, value);
+    }
+
+    public int FinalFailed
+    {
+        get => _finalFailed;
+        private set => SetProperty(ref _finalFailed, value);
+    }
+
+    public int FinalConflicts
+    {
+        get => _finalConflicts;
+        private set => SetProperty(ref _finalConflicts, value);
+    }
+
+    public int FinalSkipped
+    {
+        get => _finalSkipped;
+        private set => SetProperty(ref _finalSkipped, value);
+    }
+
+    public string ResultFolder
+    {
+        get => _resultFolder;
         private set
         {
-            if (SetProperty(ref _summaryMessage, value))
+            if (SetProperty(ref _resultFolder, value))
             {
-                OnPropertyChanged(nameof(HasSummary));
+                OnPropertyChanged(nameof(CanOpenResult));
             }
         }
     }
-
-    public bool HasSummary => !string.IsNullOrWhiteSpace(SummaryMessage);
-    public bool HasErrors => ErrorMessages.Count > 0;
-    public string ErrorHeader => HasErrors ? $"Ошибки: {ErrorMessages.Count}" : string.Empty;
 
     public async Task ScanAsync(CancellationToken cancellationToken = default)
     {
         var selectedFolder = SelectedFolder;
         var includeSubfolders = IncludeSubfolders;
-        var outputFormat = SelectedOutputFormat;
         if (!Directory.Exists(selectedFolder))
         {
             StateMessage = "Выбранная папка недоступна.";
@@ -154,38 +254,43 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         IsScanning = true;
-        StateMessage = "Проверяем папку...";
-        EmptyStateMessage = "Проверяем папку...";
-        SummaryMessage = string.Empty;
-        Operations.Clear();
-        ErrorMessages.Clear();
-        NotifyErrors();
+        StateMessage = "Ищем файлы...";
+        EmptyStateMessage = "Ищем файлы...";
+        ClearScanState();
 
         try
         {
-            var scanResult = await _folderScanner.ScanAsync(selectedFolder, includeSubfolders, cancellationToken);
-            JsonCount = scanResult.JsonCount;
-            DocCount = scanResult.DocCount;
-            XlsCount = scanResult.XlsCount;
-            PptCount = scanResult.PptCount;
-            UpdateFormatCards();
+            var scanResult = await _folderScanner.ScanAsync(
+                selectedFolder,
+                includeSubfolders,
+                cancellationToken);
+            _lastScan = scanResult;
+            _scanRoot = selectedFolder;
+            _ruleSet = RuleSet.CreateDefault();
+            FoundCount = scanResult.Files.Count;
 
             foreach (var error in scanResult.Errors)
             {
-                AddError($"Не удалось прочитать: {error.Path}. {error.Message}");
+                AddError($"Не удалось прочитать папку: {Path.GetFileName(error.Path)}.");
             }
 
-            var plan = _conversionPlanner.CreatePlan(scanResult, selectedFolder, outputFormat);
-            foreach (var operation in plan)
+            foreach (var group in scanResult.Files
+                         .GroupBy(file => file.Format)
+                         .OrderBy(group => (int)group.Key))
             {
-                Operations.Add(new OperationRowViewModel(operation));
+                var capability = FormatCapabilityCatalog.Get(group.Key);
+                FormatRules.Add(new RuleRowViewModel(
+                    capability,
+                    group.Count(),
+                    _ruleSet.GetRule(group.Key).Target,
+                    ChangeRule));
             }
 
+            RebuildPreview();
             EmptyStateMessage = Operations.Count == 0
-                ? "JSON, DOC, XLS или PPT не найдены. Выберите другую папку или включите подпапки."
+                ? "Файлы не найдены. Выберите другую папку или включите подпапки."
                 : string.Empty;
-            StateMessage = $"Проверка завершена. Найдено файлов: {Operations.Count}.";
-            OnPropertyChanged(nameof(CanConvert));
+            StateMessage = $"Найдено файлов: {FoundCount}. Preview готов.";
         }
         finally
         {
@@ -195,7 +300,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public async Task ConvertAsync(CancellationToken cancellationToken = default)
     {
-        var selectedFolder = SelectedFolder;
         var operations = Operations.Select(row => row.Operation).ToArray();
         if (!operations.Any(operation => operation.Status == OperationStatus.Ready))
         {
@@ -203,11 +307,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         IsConverting = true;
-        StateMessage = "Преобразуем JSON-файлы...";
-        SummaryMessage = string.Empty;
+        HasFinalReport = false;
+        ProgressPercent = 0;
+        CurrentFile = string.Empty;
+        StateMessage = "Преобразуем файлы...";
+        var progress = new InlineProgress<ConversionProgress>(UpdateProgress);
+
         try
         {
-            var summary = await _conversionProcessor.ProcessAsync(operations, cancellationToken);
+            var summary = await _conversionProcessor.ProcessAsync(
+                operations,
+                progress,
+                cancellationToken);
             Operations.Clear();
             foreach (var result in summary.Results)
             {
@@ -225,29 +336,172 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 }
             }
 
-            SummaryMessage =
-                $"Успешно: {summary.Succeeded}. Конфликтов: {summary.Conflicts}. Ошибок: {summary.Failed}. " +
-                $"Не поддерживается: {summary.Unsupported}. Результат: {Path.Combine(selectedFolder, "_converted")}";
-            StateMessage = "Обработка завершена.";
+            UpdatePreviewSummary();
+            FinalSucceeded = summary.Succeeded;
+            FinalFailed = summary.Failed + summary.EngineUnavailable + summary.Unsupported;
+            FinalConflicts = summary.Conflicts;
+            FinalSkipped = summary.Skipped;
+            ResultFolder = Path.Combine(_scanRoot, "_converted");
+            HasFinalReport = true;
+            StateMessage = "Пакетная обработка завершена.";
+            OnPropertyChanged(nameof(VisibleOperations));
+            OnPropertyChanged(nameof(CanOpenResult));
+        }
+        catch (OperationCanceledException)
+        {
+            RebuildPreview();
+            StateMessage = "Обработка отменена. Preview обновлён.";
+            throw;
         }
         finally
         {
             IsConverting = false;
+            CurrentFile = string.Empty;
         }
     }
 
     public void AddError(string message)
     {
         ErrorMessages.Add(message);
-        NotifyErrors();
+        OnPropertyChanged(nameof(HasErrors));
     }
 
-    private void UpdateFormatCards()
+    private void ChangeRule(SourceFormat sourceFormat, ConversionTarget target)
     {
-        FormatCards[0].Count = JsonCount;
-        FormatCards[1].Count = DocCount;
-        FormatCards[2].Count = XlsCount;
-        FormatCards[3].Count = PptCount;
+        if (IsBusy || _lastScan is null)
+        {
+            return;
+        }
+
+        _ruleSet = _ruleSet.WithRule(sourceFormat, target);
+        HasFinalReport = false;
+        RebuildPreview();
+        StateMessage = "Правило изменено. Preview обновлён.";
+    }
+
+    private void RebuildPreview()
+    {
+        Operations.Clear();
+        if (_lastScan is not null)
+        {
+            foreach (var operation in _conversionPlanner.CreatePlan(_lastScan, _scanRoot, _ruleSet))
+            {
+                Operations.Add(new OperationRowViewModel(operation));
+            }
+        }
+
+        UpdatePreviewSummary();
+        OnPropertyChanged(nameof(HasRules));
+        OnPropertyChanged(nameof(HasPreview));
+        OnPropertyChanged(nameof(VisibleOperations));
+    }
+
+    private void UpdatePreviewSummary()
+    {
+        FoundCount = Operations.Count;
+        ReadyCount = Operations.Count(row => row.Operation.Status == OperationStatus.Ready);
+        SkippedCount = Operations.Count(row => row.Operation.Status == OperationStatus.Skipped);
+        ConflictCount = Operations.Count(row => row.Operation.Status == OperationStatus.Conflict);
+        ErrorCount = Operations.Count(row => row.Operation.Status is OperationStatus.Failed
+            or OperationStatus.EngineUnavailable
+            or OperationStatus.Unsupported);
+        NotifyAvailability();
+    }
+
+    private void UpdateProgress(ConversionProgress progress)
+    {
+        CurrentFile = progress.RelativePath;
+        ProgressPercent = progress.Total == 0
+            ? 0
+            : Math.Clamp(progress.Completed * 100d / progress.Total, 0, 100);
+
+        var index = -1;
+        for (var position = 0; position < Operations.Count; position++)
+        {
+            var operation = Operations[position].Operation;
+            if (operation.RelativePath == progress.RelativePath
+                && operation.Status is OperationStatus.Ready or OperationStatus.Converting)
+            {
+                index = position;
+                break;
+            }
+        }
+
+        if (index < 0)
+        {
+            return;
+        }
+
+        var currentOperation = Operations[index].Operation;
+        if (progress.Status == OperationStatus.Converting)
+        {
+            var converting = currentOperation with
+            {
+                Status = OperationStatus.Converting,
+                Message = "Преобразование..."
+            };
+            Operations[index] = new OperationRowViewModel(converting);
+        }
+        else if (progress.Result is not null)
+        {
+            var completed = progress.Result.Operation with
+            {
+                Status = progress.Result.Status,
+                Message = progress.Result.Message
+            };
+            Operations[index] = new OperationRowViewModel(
+                completed,
+                progress.Result with { Operation = completed });
+        }
+
+        OnPropertyChanged(nameof(VisibleOperations));
+    }
+
+    private bool MatchesSelectedFilter(OperationRowViewModel row) =>
+        SelectedPreviewFilter.Filter switch
+        {
+            PreviewFilter.All => true,
+            PreviewFilter.Convert => row.Operation.Status is OperationStatus.Ready
+                or OperationStatus.Converting
+                or OperationStatus.Succeeded,
+            PreviewFilter.Skip => row.Operation.Status == OperationStatus.Skipped,
+            PreviewFilter.Conflicts => row.Operation.Status == OperationStatus.Conflict,
+            PreviewFilter.Errors => row.Operation.Status is OperationStatus.Failed
+                or OperationStatus.EngineUnavailable
+                or OperationStatus.Unsupported,
+            _ => true
+        };
+
+    private void InvalidateScan(string message)
+    {
+        if (IsBusy || _lastScan is null)
+        {
+            return;
+        }
+
+        ClearScanState();
+        _lastScan = null;
+        _scanRoot = string.Empty;
+        StateMessage = message;
+        EmptyStateMessage = "Выполните сканирование, чтобы построить новый preview.";
+    }
+
+    private void ClearScanState()
+    {
+        FormatRules.Clear();
+        Operations.Clear();
+        ErrorMessages.Clear();
+        FoundCount = 0;
+        ReadyCount = 0;
+        SkippedCount = 0;
+        ConflictCount = 0;
+        ErrorCount = 0;
+        HasFinalReport = false;
+        ResultFolder = string.Empty;
+        OnPropertyChanged(nameof(HasRules));
+        OnPropertyChanged(nameof(HasPreview));
+        OnPropertyChanged(nameof(HasErrors));
+        OnPropertyChanged(nameof(VisibleOperations));
     }
 
     private void NotifyAvailability()
@@ -258,32 +512,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanChangeSettings));
     }
 
-    private void NotifyErrors()
-    {
-        OnPropertyChanged(nameof(HasErrors));
-        OnPropertyChanged(nameof(ErrorHeader));
-    }
-
-    private void InvalidatePreview()
-    {
-        if (IsBusy || Operations.Count == 0)
-        {
-            return;
-        }
-
-        Operations.Clear();
-        SummaryMessage = string.Empty;
-        EmptyStateMessage = "Настройки изменены. Нажмите «Проверить файлы», чтобы обновить preview.";
-        StateMessage = "Требуется повторная проверка.";
-        OnPropertyChanged(nameof(CanConvert));
-    }
-
     private bool SetProperty<T>(ref T storage, T value, [CallerMemberName] string? propertyName = null)
     {
         if (EqualityComparer<T>.Default.Equals(storage, value))
         {
             return false;
         }
+
         storage = value;
         OnPropertyChanged(propertyName);
         return true;
@@ -291,4 +526,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+    private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
+    }
 }

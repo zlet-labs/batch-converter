@@ -6,21 +6,22 @@ namespace Zlet.FolderConverter.Tests;
 
 public sealed class PresentationTests : IDisposable
 {
-    private readonly string _rootPath;
+    private readonly string _rootPath = Path.Combine(
+        Path.GetTempPath(),
+        "zlet-folder-converter-presentation-tests",
+        Guid.NewGuid().ToString("N"));
 
-    public PresentationTests()
-    {
-        _rootPath = Path.Combine(Path.GetTempPath(), "zlet-folder-converter-presentation-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_rootPath);
-    }
+    public PresentationTests() => Directory.CreateDirectory(_rootPath);
 
     [Theory]
-    [InlineData(OperationStatus.Unsupported, "Не поддерживается")]
+    [InlineData(OperationStatus.Ready, "Готов")]
+    [InlineData(OperationStatus.Skipped, "Пропущен")]
+    [InlineData(OperationStatus.Converting, "В процессе")]
+    [InlineData(OperationStatus.Succeeded, "Успешно")]
     [InlineData(OperationStatus.Conflict, "Конфликт")]
-    [InlineData(OperationStatus.Ready, "Готово к обработке")]
     [InlineData(OperationStatus.Failed, "Ошибка")]
-    [InlineData(OperationStatus.Succeeded, "Преобразовано")]
-    [InlineData(OperationStatus.Skipped, "Пропущено")]
+    [InlineData(OperationStatus.EngineUnavailable, "Движок недоступен")]
+    [InlineData(OperationStatus.Unsupported, "Не поддерживается")]
     public void OperationRowViewModel_localizes_statuses(
         OperationStatus status,
         string expected)
@@ -29,103 +30,94 @@ public sealed class PresentationTests : IDisposable
     }
 
     [Fact]
-    public void OperationRowViewModel_uses_short_future_relative_path()
+    public void OperationRowViewModel_shows_relative_paths_and_russian_action()
     {
-        var operation = CreateOperation(
-            Path.Combine("архив договоров", "old file.doc"),
-            OperationStatus.Unsupported);
+        var relative = Path.Combine("архив договоров", "old file.doc");
+        var operation = new PlannedOperation(
+            Path.Combine(_rootPath, relative),
+            relative,
+            SourceFormat.Doc,
+            ConversionTarget.Docx,
+            ".docx",
+            Path.Combine(_rootPath, "_converted", "архив договоров", "old file.docx"),
+            true,
+            OperationStatus.Ready,
+            "ready",
+            Path.Combine(_rootPath, "_converted"));
 
         var row = new OperationRowViewModel(operation);
 
-        Assert.Equal(Path.Combine("_converted", "архив договоров", "old file.docx"), row.FutureRelativePath);
-        Assert.Equal(operation.TargetPath, row.TargetPath);
+        Assert.Equal(relative, row.FilePath);
+        Assert.Equal(Path.Combine("архив договоров", "old file.docx"), row.ResultPath);
+        Assert.Equal("DOC → DOCX", row.ActionLabel);
     }
 
     [Fact]
-    public void OperationRowViewModel_does_not_show_technical_message_in_main_row()
+    public async Task MainWindowViewModel_builds_default_rule_rows_for_found_formats()
     {
-        var operation = CreateOperation("source.doc", OperationStatus.Unsupported);
-
-        var row = new OperationRowViewModel(operation);
-
-        Assert.Equal("Конвертация недоступна.", row.Message);
-        Assert.False(row.HasTechnicalMessage);
-    }
-
-    [Fact]
-    public async Task MainWindowViewModel_does_not_add_unsupported_rows_to_error_log()
-    {
-        WriteSyntheticFile("source.doc");
+        Write("one.json", "{}");
+        Write("two.docx", "synthetic");
+        Write("manual.pdf", "%PDF-1.7");
         var viewModel = CreateViewModel();
 
         await viewModel.ScanAsync();
 
-        Assert.Single(viewModel.Operations);
-        Assert.Equal("Не поддерживается", viewModel.Operations[0].Status);
-        Assert.Empty(viewModel.ErrorMessages);
-        Assert.False(viewModel.HasErrors);
+        Assert.Equal(3, viewModel.FormatRules.Count);
+        Assert.Equal(ConversionTarget.Txt, RuleFor(viewModel, SourceFormat.Json).SelectedTarget.Target);
+        Assert.Equal(ConversionTarget.Skip, RuleFor(viewModel, SourceFormat.Docx).SelectedTarget.Target);
+        Assert.Equal(ConversionTarget.Skip, RuleFor(viewModel, SourceFormat.Pdf).SelectedTarget.Target);
+        Assert.Equal(1, viewModel.ReadyCount);
+        Assert.Equal(2, viewModel.SkippedCount);
     }
 
     [Fact]
-    public async Task MainWindowViewModel_sets_empty_state_for_empty_folder()
+    public async Task Changing_rule_rebuilds_preview_immediately()
     {
+        Write("source.json", "{}");
+        var viewModel = CreateViewModel();
+        await viewModel.ScanAsync();
+        var jsonRule = RuleFor(viewModel, SourceFormat.Json);
+        var markdown = jsonRule.Targets.Single(option =>
+            option.Target == ConversionTarget.Markdown);
+
+        jsonRule.SelectedTarget = markdown;
+
+        var operation = Assert.Single(viewModel.Operations).Operation;
+        Assert.Equal(ConversionTarget.Markdown, operation.Target);
+        Assert.EndsWith(".md", operation.TargetPath);
+        Assert.Equal("Правило изменено. Preview обновлён.", viewModel.StateMessage);
+    }
+
+    [Fact]
+    public async Task Unknown_format_is_visible_and_skipped()
+    {
+        Write("source.custom", "synthetic");
         var viewModel = CreateViewModel();
 
         await viewModel.ScanAsync();
 
-        Assert.Equal("JSON, DOC, XLS или PPT не найдены. Выберите другую папку или включите подпапки.", viewModel.EmptyStateMessage);
-        Assert.Equal("Проверка завершена. Найдено файлов: 0.", viewModel.StateMessage);
+        Assert.Equal(SourceFormat.Unknown, Assert.Single(viewModel.FormatRules).SourceFormat);
+        Assert.Equal(OperationStatus.Skipped, Assert.Single(viewModel.Operations).Operation.Status);
     }
 
     [Fact]
-    public async Task MainWindowViewModel_sets_completed_state_and_counts()
+    public async Task Preview_filter_shows_only_skipped_operations()
     {
-        WriteSyntheticFile("one.doc");
-        WriteSyntheticFile("two.xls");
-        WriteSyntheticFile("three.ppt");
-        var viewModel = CreateViewModel();
-
-        await viewModel.ScanAsync();
-
-        Assert.Equal("Проверка завершена. Найдено файлов: 3.", viewModel.StateMessage);
-        Assert.Equal(1, viewModel.DocCount);
-        Assert.Equal(1, viewModel.XlsCount);
-        Assert.Equal(1, viewModel.PptCount);
-        Assert.Equal("1 файл", viewModel.FormatCards[1].CountText);
-    }
-
-    [Fact]
-    public async Task MainWindowViewModel_marks_conflict_state_without_error_log()
-    {
-        WriteSyntheticFile("source.doc");
-        WriteSyntheticFile(Path.Combine("_converted", "source.docx"));
-        var viewModel = CreateViewModel();
-
-        await viewModel.ScanAsync();
-
-        var row = Assert.Single(viewModel.Operations);
-        Assert.Equal("Конфликт", row.Status);
-        Assert.Equal("Файл или папка результата уже существует.", row.Message);
-        Assert.Empty(viewModel.ErrorMessages);
-    }
-
-    [Fact]
-    public async Task MainWindowViewModel_repeated_scan_clears_old_rows()
-    {
-        WriteSyntheticFile("source.doc");
+        Write("source.json", "{}");
+        Write("manual.pdf", "%PDF-1.7");
         var viewModel = CreateViewModel();
         await viewModel.ScanAsync();
-        Assert.Single(viewModel.Operations);
 
-        File.Delete(Path.Combine(_rootPath, "source.doc"));
-        await viewModel.ScanAsync();
+        viewModel.SelectedPreviewFilter = viewModel.PreviewFilters.Single(option =>
+            option.Filter == PreviewFilter.Skip);
 
-        Assert.Empty(viewModel.Operations);
-        Assert.Equal("JSON, DOC, XLS или PPT не найдены. Выберите другую папку или включите подпапки.", viewModel.EmptyStateMessage);
+        Assert.Equal(
+            OperationStatus.Skipped,
+            Assert.Single(viewModel.VisibleOperations).Operation.Status);
     }
 
     [Fact]
-    public async Task MainWindowViewModel_uses_original_root_for_scan_and_plan_when_selection_changes()
+    public async Task Scan_captures_original_root_before_await()
     {
         var otherRoot = Path.Combine(_rootPath, "other");
         Directory.CreateDirectory(otherRoot);
@@ -144,57 +136,43 @@ public sealed class PresentationTests : IDisposable
     }
 
     [Fact]
-    public async Task MainWindowViewModel_converts_ready_json_and_disables_repeat_without_rescan()
+    public async Task ConvertAsync_converts_ready_json_and_exposes_final_report()
     {
-        var sourcePath = Path.Combine(_rootPath, "users.json");
-        File.WriteAllText(sourcePath, """{"name":"Тест 😀"}""");
+        const string source = """{"name":"Тест 😀"}""";
+        Write("users.json", source);
+        Write("manual.pdf", "%PDF-1.7");
         var viewModel = CreateViewModel();
 
         await viewModel.ScanAsync();
-        Assert.True(viewModel.CanConvert);
         await viewModel.ConvertAsync();
 
-        Assert.False(viewModel.CanConvert);
-        Assert.Contains("Успешно: 1", viewModel.SummaryMessage);
-        Assert.Equal("Преобразовано", Assert.Single(viewModel.Operations).Status);
+        Assert.True(viewModel.HasFinalReport);
+        Assert.Equal(1, viewModel.FinalSucceeded);
+        Assert.Equal(1, viewModel.FinalSkipped);
+        Assert.Equal("Успешно", viewModel.Operations.Single(row =>
+            row.Operation.SourceFormat == SourceFormat.Json).Status);
         Assert.True(File.Exists(Path.Combine(_rootPath, "_converted", "users.txt")));
-        Assert.Equal("""{"name":"Тест 😀"}""", File.ReadAllText(sourcePath));
+        Assert.Equal(source, File.ReadAllText(Path.Combine(_rootPath, "users.json")));
     }
 
     [Fact]
-    public async Task MainWindowViewModel_repeated_scan_after_conversion_shows_conflict()
+    public async Task Repeated_scan_after_conversion_reports_conflict()
     {
-        File.WriteAllText(Path.Combine(_rootPath, "source.json"), "{}");
+        Write("source.json", "{}");
         var viewModel = CreateViewModel();
 
         await viewModel.ScanAsync();
         await viewModel.ConvertAsync();
         await viewModel.ScanAsync();
 
-        var row = Assert.Single(viewModel.Operations);
-        Assert.Equal("Конфликт", row.Status);
+        Assert.Equal(OperationStatus.Conflict, Assert.Single(viewModel.Operations).Operation.Status);
         Assert.False(viewModel.CanConvert);
     }
 
     [Fact]
-    public async Task MainWindowViewModel_output_format_change_invalidates_preview()
+    public async Task Folder_change_invalidates_existing_preview()
     {
-        File.WriteAllText(Path.Combine(_rootPath, "source.json"), "{}");
-        var viewModel = CreateViewModel();
-        await viewModel.ScanAsync();
-        Assert.True(viewModel.CanConvert);
-
-        viewModel.SelectedOutputFormat = OutputFormat.Markdown;
-
-        Assert.Empty(viewModel.Operations);
-        Assert.False(viewModel.CanConvert);
-        Assert.Equal("Требуется повторная проверка.", viewModel.StateMessage);
-    }
-
-    [Fact]
-    public async Task MainWindowViewModel_folder_change_invalidates_preview()
-    {
-        File.WriteAllText(Path.Combine(_rootPath, "source.json"), "{}");
+        Write("source.json", "{}");
         var nextFolder = Path.Combine(_rootPath, "next");
         Directory.CreateDirectory(nextFolder);
         var viewModel = CreateViewModel();
@@ -203,6 +181,7 @@ public sealed class PresentationTests : IDisposable
         viewModel.SelectedFolder = nextFolder;
 
         Assert.Empty(viewModel.Operations);
+        Assert.Empty(viewModel.FormatRules);
         Assert.False(viewModel.CanConvert);
     }
 
@@ -216,35 +195,27 @@ public sealed class PresentationTests : IDisposable
 
     private MainWindowViewModel CreateViewModel()
     {
+        var resolver = new DefaultConversionAdapterResolver();
         return new MainWindowViewModel(
             new FileSystemFolderScanner(),
-            new ConversionPlanner(new DefaultConversionAdapterResolver()))
+            new ConversionPlanner(resolver),
+            new ConversionProcessor(resolver))
         {
             SelectedFolder = _rootPath,
             IncludeSubfolders = true
         };
     }
 
-    private PlannedOperation CreateOperation(
-        string relativePath,
-        OperationStatus status)
-    {
-        return new PlannedOperation(
-            Path.Combine(_rootPath, relativePath),
-            relativePath,
-            DocumentFormat.Doc,
-            ".docx",
-            Path.Combine(_rootPath, "_converted", Path.ChangeExtension(relativePath, ".docx")),
-            false,
-            status,
-            "DOC to DOCX is unsupported until an embedded converter passes license and synthetic validation.");
-    }
+    private static RuleRowViewModel RuleFor(
+        MainWindowViewModel viewModel,
+        SourceFormat source) =>
+        viewModel.FormatRules.Single(rule => rule.SourceFormat == source);
 
-    private void WriteSyntheticFile(string relativePath)
+    private void Write(string relativePath, string content)
     {
         var path = Path.Combine(_rootPath, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, "synthetic test fixture");
+        File.WriteAllText(path, content);
     }
 
     private sealed class CallbackScanner(string root) : IFolderScanner
@@ -252,7 +223,10 @@ public sealed class PresentationTests : IDisposable
         public Action? Callback { get; set; }
         public string? ReceivedRoot { get; private set; }
 
-        public Task<ScanResult> ScanAsync(string rootPath, bool includeSubfolders, CancellationToken cancellationToken)
+        public Task<ScanResult> ScanAsync(
+            string rootPath,
+            bool includeSubfolders,
+            CancellationToken cancellationToken)
         {
             ReceivedRoot = rootPath;
             Callback?.Invoke();
@@ -267,7 +241,7 @@ public sealed class PresentationTests : IDisposable
         public IReadOnlyList<PlannedOperation> CreatePlan(
             ScanResult scanResult,
             string rootPath,
-            OutputFormat outputFormat = OutputFormat.TXT)
+            RuleSet ruleSet)
         {
             ReceivedRoot = rootPath;
             return [];

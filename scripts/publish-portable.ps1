@@ -1,4 +1,5 @@
 param(
+    [string]$LibreOfficePath = "",
     [string]$Version = ""
 )
 
@@ -10,41 +11,119 @@ $appFolder = Join-Path $portableRoot "ZletFolderConverter"
 $projectPath = Join-Path $repoRoot "src\Zlet.FolderConverter.App\Zlet.FolderConverter.App.csproj"
 $readmePath = Join-Path $repoRoot "README_PORTABLE.txt"
 $licensePath = Join-Path $repoRoot "LICENSE"
+$noticesPath = Join-Path $repoRoot "THIRD_PARTY_NOTICES.md"
+$licensesDirectory = Join-Path $repoRoot "licenses"
 
-function Fail($Message) {
+function Fail([string]$Message) {
     Write-Error $Message
     exit 1
 }
 
-$sdks = & dotnet --list-sdks
-if ($LASTEXITCODE -ne 0) {
-    Fail "Unable to query installed .NET SDKs."
+function Resolve-LibreOfficeRuntime([string]$Candidate) {
+    if ([string]::IsNullOrWhiteSpace($Candidate)) {
+        Fail "LibreOffice runtime path is required. Pass -LibreOfficePath <path>."
+    }
+
+    if (-not (Test-Path -LiteralPath $Candidate)) {
+        Fail "LibreOffice runtime was not found at the supplied path."
+    }
+
+    $resolved = (Resolve-Path -LiteralPath $Candidate).Path
+    if (Test-Path -LiteralPath $resolved -PathType Leaf) {
+        if (-not ([System.IO.Path]::GetFileName($resolved).Equals("soffice.exe", [System.StringComparison]::OrdinalIgnoreCase))) {
+            Fail "LibreOfficePath must point to soffice.exe or a LibreOffice runtime directory."
+        }
+
+        $programDirectory = Split-Path -Parent $resolved
+        return [PSCustomObject]@{
+            Root = Split-Path -Parent $programDirectory
+            Executable = $resolved
+        }
+    }
+
+    $directExecutable = Join-Path $resolved "soffice.exe"
+    $programExecutable = Join-Path $resolved "program\soffice.exe"
+    if (Test-Path -LiteralPath $programExecutable -PathType Leaf) {
+        return [PSCustomObject]@{
+            Root = $resolved
+            Executable = $programExecutable
+        }
+    }
+
+    if (Test-Path -LiteralPath $directExecutable -PathType Leaf) {
+        return [PSCustomObject]@{
+            Root = Split-Path -Parent $resolved
+            Executable = $directExecutable
+        }
+    }
+
+    Fail "LibreOffice soffice.exe was not found under the supplied runtime path."
 }
 
-if (-not ($sdks -match "^8\.")) {
+function Assert-SafeArtifactPath([string]$Path) {
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $expectedRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "artifacts\portable"))
+    if (-not $fullPath.StartsWith(
+        $expectedRoot + [System.IO.Path]::DirectorySeparatorChar,
+        [System.StringComparison]::OrdinalIgnoreCase)) {
+        Fail "Refusing to modify an unexpected artifact path."
+    }
+}
+
+function Copy-PackageDocuments(
+    [string]$RuntimeRoot,
+    [string]$Destination
+) {
+    $documents = Get-ChildItem -LiteralPath $RuntimeRoot -Recurse -File |
+        Where-Object {
+            $_.Name -match "^(LICENSE|NOTICE|COPYING|CREDITS|README)(\.|_|-|$)"
+        }
+    $licenseDocuments = $documents |
+        Where-Object { $_.Name -match "^(LICENSE|COPYING)(\.|_|-|$)" }
+    if (-not $licenseDocuments) {
+        Fail "No license document was found in the selected LibreOffice package. Packaging is blocked."
+    }
+
+    foreach ($document in $documents) {
+        $relativePath = $document.FullName.Substring($RuntimeRoot.Length).TrimStart(
+            [char[]]@("\", "/"))
+        $destinationPath = Join-Path $Destination $relativePath
+        $destinationDirectory = Split-Path -Parent $destinationPath
+        New-Item -ItemType Directory -Force -Path $destinationDirectory | Out-Null
+        Copy-Item -LiteralPath $document.FullName -Destination $destinationPath -Force
+    }
+}
+
+$sdks = & dotnet --list-sdks
+if ($LASTEXITCODE -ne 0 -or -not ($sdks -match "^8\.")) {
     Fail ".NET 8 SDK is required to publish the portable package."
 }
 
-if (-not (Test-Path -LiteralPath $projectPath)) {
-    Fail "Project file not found: $projectPath"
-}
-
-if (-not (Test-Path -LiteralPath $readmePath)) {
-    Fail "README_PORTABLE.txt not found: $readmePath"
-}
-
-if (-not (Test-Path -LiteralPath $licensePath)) {
-    Fail "LICENSE not found: $licensePath"
-}
-
-if (Test-Path -LiteralPath $portableRoot) {
-    $resolvedPortableRoot = (Resolve-Path -LiteralPath $portableRoot).Path
-    $expectedParent = (Join-Path $repoRoot "artifacts\portable")
-
-    if (-not $resolvedPortableRoot.StartsWith($expectedParent, [System.StringComparison]::OrdinalIgnoreCase)) {
-        Fail "Refusing to clean unexpected path: $resolvedPortableRoot"
+foreach ($requiredPath in @(
+    $projectPath,
+    $readmePath,
+    $licensePath,
+    $noticesPath,
+    $licensesDirectory
+)) {
+    if (-not (Test-Path -LiteralPath $requiredPath)) {
+        Fail "Required packaging input is missing."
     }
+}
 
+$runtime = Resolve-LibreOfficeRuntime $LibreOfficePath
+$versionCommand = Join-Path (Split-Path -Parent $runtime.Executable) "soffice.com"
+if (-not (Test-Path -LiteralPath $versionCommand -PathType Leaf)) {
+    $versionCommand = $runtime.Executable
+}
+
+$libreOfficeVersion = (& $versionCommand --headless --version 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($libreOfficeVersion)) {
+    Fail "Unable to determine the LibreOffice version from the selected package."
+}
+
+Assert-SafeArtifactPath $portableRoot
+if (Test-Path -LiteralPath $portableRoot) {
     Remove-Item -LiteralPath $portableRoot -Recurse -Force
 }
 
@@ -66,36 +145,98 @@ if ($LASTEXITCODE -ne 0) {
 
 Copy-Item -LiteralPath $readmePath -Destination (Join-Path $appFolder "README_PORTABLE.txt") -Force
 Copy-Item -LiteralPath $licensePath -Destination (Join-Path $appFolder "LICENSE.txt") -Force
+Copy-Item -LiteralPath $noticesPath -Destination (Join-Path $appFolder "THIRD_PARTY_NOTICES.md") -Force
+$packagedLicenses = Join-Path $appFolder "licenses"
+New-Item -ItemType Directory -Force -Path $packagedLicenses | Out-Null
+Copy-Item -Path (Join-Path $licensesDirectory "*") -Destination $packagedLicenses -Recurse -Force
+
+$runtimeDestination = Join-Path $appFolder "runtime\libreoffice"
+New-Item -ItemType Directory -Force -Path $runtimeDestination | Out-Null
+Copy-Item -Path (Join-Path $runtime.Root "*") -Destination $runtimeDestination -Recurse -Force
+
+$packageDocuments = Join-Path $appFolder "licenses\libreoffice\package-documents"
+New-Item -ItemType Directory -Force -Path $packageDocuments | Out-Null
+Copy-PackageDocuments $runtime.Root $packageDocuments
+
+$versionFile = Join-Path $appFolder "licenses\libreoffice\VERSION.txt"
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $versionFile) | Out-Null
+Set-Content -LiteralPath $versionFile -Encoding UTF8 -Value @(
+    "Bundled component: LibreOffice"
+    "Version reported by the packaged runtime: $libreOfficeVersion"
+    "Runtime source path is intentionally not recorded."
+)
+
+$sourceInfoFile = Join-Path $appFolder "licenses\libreoffice\SOURCE_INFO.txt"
+Set-Content -LiteralPath $sourceInfoFile -Encoding UTF8 -Value @(
+    "Corresponding LibreOffice source archives:"
+    "https://www.libreoffice.org/download-other/"
+    "https://download.documentfoundation.org/libreoffice/src/"
+    ""
+    "Use the exact version recorded in VERSION.txt and the instructions in the"
+    "license documents copied from the selected runtime package."
+)
 
 $zipName = if ([string]::IsNullOrWhiteSpace($Version)) {
     "ZletFolderConverter-win-x64-portable.zip"
 } else {
-    "ZletFolderConverter-$Version-win-x64-portable.zip"
+    $safeVersion = $Version -replace "[^0-9A-Za-z._-]", "-"
+    "ZletFolderConverter-$safeVersion-win-x64-portable.zip"
+}
+$zipPath = Join-Path $portableRoot $zipName
+
+$requiredOutputs = @(
+    (Join-Path $appFolder "ZletFolderConverter.exe"),
+    (Join-Path $runtimeDestination "program\soffice.exe"),
+    (Join-Path $appFolder "licenses"),
+    (Join-Path $appFolder "THIRD_PARTY_NOTICES.md"),
+    (Join-Path $appFolder "README_PORTABLE.txt")
+)
+foreach ($requiredOutput in $requiredOutputs) {
+    if (-not (Test-Path -LiteralPath $requiredOutput)) {
+        Fail "Portable package validation failed: a required output is missing."
+    }
 }
 
-$zipPath = Join-Path $portableRoot $zipName
-if (Test-Path -LiteralPath $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
+$forbiddenDirectories = Get-ChildItem -LiteralPath $appFolder -Recurse -Directory |
+    Where-Object { $_.Name -in @("bin", "obj", "fixtures", "test-fixtures") }
+if ($forbiddenDirectories) {
+    Fail "Portable package validation failed: build or test directories are present."
+}
+
+$forbiddenFiles = Get-ChildItem -LiteralPath $appFolder -Recurse -File |
+    Where-Object {
+        $_.Extension -in @(".cs", ".csproj", ".sln", ".pfx", ".pem", ".key") -or
+        $_.Name -match "\.(user|suo)$"
+    }
+if ($forbiddenFiles) {
+    Fail "Portable package validation failed: source, test, or secret-bearing files are present."
+}
+
+$ownedTextFiles = @(
+    (Join-Path $appFolder "README_PORTABLE.txt"),
+    (Join-Path $appFolder "THIRD_PARTY_NOTICES.md"),
+    (Join-Path $appFolder "licenses\README.md"),
+    $versionFile,
+    $sourceInfoFile
+)
+foreach ($textFile in $ownedTextFiles) {
+    if (Test-Path -LiteralPath $textFile) {
+        $content = Get-Content -Raw -LiteralPath $textFile
+        if ($content.IndexOf($repoRoot, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $content.IndexOf($runtime.Root, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $content.IndexOf("ZLET_LIBREOFFICE_PATH", [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            Fail "Portable package validation failed: a local absolute path was recorded."
+        }
+    }
 }
 
 Compress-Archive -LiteralPath $appFolder -DestinationPath $zipPath -Force
-
-$exePath = Join-Path $appFolder "ZletFolderConverter.exe"
-if (-not (Test-Path -LiteralPath $exePath)) {
-    Fail "Published EXE not found: $exePath"
-}
-
-if ((Get-Item -LiteralPath $exePath).Length -le 0) {
-    Fail "Published EXE is empty: $exePath"
-}
-
-if (-not (Test-Path -LiteralPath $zipPath)) {
+if (-not (Test-Path -LiteralPath $zipPath) -or
+    (Get-Item -LiteralPath $zipPath).Length -le 0) {
     Fail "Portable ZIP was not created."
-}
-
-if ((Get-Item -LiteralPath $zipPath).Length -le 0) {
-    Fail "Portable ZIP is empty: $zipPath"
 }
 
 Write-Output "Portable ZIP created:"
 Write-Output (Resolve-Path -LiteralPath $zipPath).Path
+Write-Output "LibreOffice version:"
+Write-Output $libreOfficeVersion

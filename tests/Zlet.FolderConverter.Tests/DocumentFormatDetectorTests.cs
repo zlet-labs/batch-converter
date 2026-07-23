@@ -6,55 +6,38 @@ namespace Zlet.FolderConverter.Tests;
 public sealed class DocumentFormatDetectorTests
 {
     [Theory]
-    [InlineData("sample.doc", DocumentFormat.Doc)]
-    [InlineData("sample.DOC", DocumentFormat.Doc)]
-    [InlineData("sample.DoC", DocumentFormat.Doc)]
-    [InlineData("sample.xls", DocumentFormat.Xls)]
-    [InlineData("sample.XLS", DocumentFormat.Xls)]
-    [InlineData("sample.XlS", DocumentFormat.Xls)]
-    [InlineData("sample.ppt", DocumentFormat.Ppt)]
-    [InlineData("sample.PPT", DocumentFormat.Ppt)]
-    [InlineData("sample.PpT", DocumentFormat.Ppt)]
-    [InlineData("sample.json", DocumentFormat.Json)]
-    [InlineData("sample.JSON", DocumentFormat.Json)]
-    [InlineData("sample.JsOn", DocumentFormat.Json)]
-    public void TryDetect_detects_supported_formats_case_insensitively(
+    [InlineData("sample.JSON", SourceFormat.Json)]
+    [InlineData("sample.doc", SourceFormat.Doc)]
+    [InlineData("sample.XLS", SourceFormat.Xls)]
+    [InlineData("sample.PpT", SourceFormat.Ppt)]
+    [InlineData("sample.docx", SourceFormat.Docx)]
+    [InlineData("sample.xlsx", SourceFormat.Xlsx)]
+    [InlineData("sample.pptx", SourceFormat.Pptx)]
+    [InlineData("sample.odt", SourceFormat.Odt)]
+    [InlineData("sample.ods", SourceFormat.Ods)]
+    [InlineData("sample.odp", SourceFormat.Odp)]
+    [InlineData("sample.pdf", SourceFormat.Pdf)]
+    [InlineData("sample.png", SourceFormat.Image)]
+    [InlineData("sample.zip", SourceFormat.Archive)]
+    [InlineData("sample.xyz", SourceFormat.Unknown)]
+    public void Detect_classifies_mixed_formats_case_insensitively(
         string fileName,
-        DocumentFormat expectedFormat)
+        SourceFormat expectedFormat)
     {
-        var detected = DocumentFormatDetector.TryDetect(fileName, out var format);
-
-        Assert.True(detected);
-        Assert.Equal(expectedFormat, format);
+        Assert.Equal(expectedFormat, DocumentFormatDetector.Detect(fileName));
     }
 
     [Theory]
-    [InlineData(DocumentFormat.Doc, ".docx")]
-    [InlineData(DocumentFormat.Xls, ".xlsx")]
-    [InlineData(DocumentFormat.Ppt, ".pptx")]
-    [InlineData(DocumentFormat.Json, ".txt")]
+    [InlineData(ConversionTarget.Txt, ".txt")]
+    [InlineData(ConversionTarget.Markdown, ".md")]
+    [InlineData(ConversionTarget.Docx, ".docx")]
+    [InlineData(ConversionTarget.Xlsx, ".xlsx")]
+    [InlineData(ConversionTarget.Pptx, ".pptx")]
+    [InlineData(ConversionTarget.Pdf, ".pdf")]
     public void GetTargetExtension_returns_expected_mapping(
-        DocumentFormat format,
+        ConversionTarget target,
         string expectedExtension)
     {
-        Assert.Equal(expectedExtension, DocumentFormatDetector.GetTargetExtension(format));
-    }
-
-    [Fact]
-    public void GetTargetExtension_maps_json_to_markdown()
-    {
-        Assert.Equal(".md", DocumentFormatDetector.GetTargetExtension(DocumentFormat.Json, OutputFormat.Markdown));
-    }
-
-    [Theory]
-    [InlineData("notes.txt")]
-    [InlineData("report.docx")]
-    [InlineData("book.xlsx")]
-    [InlineData("slides.pptx")]
-    public void TryDetect_rejects_unsupported_formats(string fileName)
-    {
-        var detected = DocumentFormatDetector.TryDetect(fileName, out _);
-
-        Assert.False(detected);
+        Assert.Equal(expectedExtension, DocumentFormatDetector.GetTargetExtension(target));
     }
 }

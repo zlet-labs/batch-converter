@@ -1,49 +1,76 @@
-# Conversion Research
+# Conversion engine decision
 
-Zlet Folder Converter must run locally as a self-contained Windows x64 application. Conversion adapters may be added only when the package works inside the .NET app, requires no external runtime, has licensing compatible with a public MIT repository and commercial use, has no watermark or artificial evaluation limits, and passes synthetic validation.
+## Decision for ZL-041
 
-## Summary Decision
+Zlet Folder Converter uses a local bundled LibreOffice runtime for Office and
+OpenDocument conversion. LibreOffice is invoked only through
+`LibreOfficeConversionAdapter`, `ILibreOfficeRuntimeLocator`, and
+`ILibreOfficeProcessRunner`; UI and planning code do not know about
+`soffice.exe`.
 
-No production conversion dependency is added in this prototype. DOC, XLS, and PPT are detected and planned, but all mappings are reported as unsupported.
+The application does not use Microsoft Office COM, a cloud service, a network
+runtime, or automatic downloads. The portable package keeps LibreOffice in
+`runtime/libreoffice` rather than attempting to embed it into one EXE.
 
-## Candidate Matrix
+## Why this architecture
 
-| Candidate | Source | License / terms | Runtime | Limits / watermark | Format fit | Decision |
-| --- | --- | --- | --- | --- | --- | --- |
-| Microsoft Open XML SDK / `DocumentFormat.OpenXml` | Microsoft docs and NuGet: https://learn.microsoft.com/en-us/office/open-xml/about-the-open-xml-sdk, https://www.nuget.org/packages/DocumentFormat.OpenXml | Open source package, suitable for OOXML manipulation. | .NET only. | No evaluation watermark noted. | Works with Open XML packages such as DOCX/XLSX/PPTX. It is not a legacy binary DOC/XLS/PPT converter. | Reject for DOC/XLS/PPT conversion. Useful later for validating or editing generated OOXML. |
-| NPOI | GitHub and NuGet: https://github.com/nissl-lab/npoi, https://www.nuget.org/packages/NPOI | Repository shows Apache-2.0, but current binary/NuGet releases include an EULA and maintenance-fee requirement for revenue-generating users. | .NET package, no Office automation. | No watermark found, but commercial terms need explicit product/legal acceptance. | Strong Excel support; legacy binary handling exists in parts of the project, but full DOC/PPT to OOXML conversion fidelity is not confirmed for this product requirement. | Defer. Do not add until EULA/commercial terms and mapping coverage are approved. |
-| Aspose.Words / Cells / Slides | Official licensing docs and NuGet pages, for example https://docs.aspose.com/words/net/licensing/ and https://www.nuget.org/packages/Aspose.Words | Commercial licensing. Trial mode has watermark and size limits. | .NET only, no Office required. | Evaluation watermark and document-size limitations unless licensed. | Product family can cover document conversions, but would require paid licensing and separate packages for Word, Excel, and PowerPoint. | Reject for this prototype. Revisit only with an explicit commercial license decision. |
-| Syncfusion Document SDK | Official product and pricing pages: https://www.syncfusion.com/document-sdk, https://www.syncfusion.com/sales/pricing | Commercial subscription/licensing model. Public/commercial use requires license review. | Vendor claims no Microsoft Office or third-party dependency. | Trial/licensing terms need activation/license handling. | Product family advertises Word, Excel, and PowerPoint processing/conversion. | Defer. Do not add until license and redistribution terms are approved. |
-| GemBox Document / Spreadsheet / Presentation | Official pages: https://www.gemboxsoftware.com/document, https://www.gemboxsoftware.com/document/free-version, https://www.gemboxsoftware.com/bundle | Commercial product with free mode limits. | .NET only. | Free mode has artificial limits such as paragraph limits. | Product family can read/write legacy and modern office formats, depending on component. | Reject for this prototype because free limits violate requirements. |
-| Free Spire.Doc / Spire family | Official pages and NuGet: https://www.e-iceblue.com/Introduce/free-doc-component.html, https://www.nuget.org/packages/FreeSpire.Doc | Free edition has documented artificial limits; commercial edition requires licensing. | .NET package, no Office required. | Free edition has paragraph/table/page limits. | Word conversion support exists in product family; Excel and PowerPoint would require separate products. | Reject for this prototype because artificial limits violate requirements. |
-| Telerik Document Processing | Official docs: https://www.telerik.com/document-processing-libraries, https://www.telerik.com/document-processing-libraries/documentation/distribution-and-licensing/license-key/setting-up-license-key | Commercial/trial license key required for current releases. | .NET package. | Requires activation through trial or commercial license key. | Provides document-processing libraries, but legacy binary conversion coverage must be validated. | Defer. License-key requirement does not fit the first portable prototype without a product decision. |
+- one engine covers legacy Office, OOXML, OpenDocument, and PDF output;
+- conversion stays on the user's machine;
+- a headless process can be isolated with a unique temporary user profile;
+- the adapter can be replaced later without changing rules, planner, or
+  ViewModel;
+- per-file process calls keep failures attributable and allow the batch to
+  continue.
 
-## Mapping Decisions
+## Safety implementation
 
-### DOC to DOCX
+Each Office operation:
 
-- Status: Unsupported.
-- Best candidates: Aspose.Words, GemBox.Document, Spire.Doc, Syncfusion Document SDK, Telerik WordsProcessing.
-- Reason: available embedded libraries are commercial, limited in free/evaluation mode, or require license activation. Open XML SDK is not a binary DOC converter.
-- Prototype action: detect `.doc`, plan `.docx`, show `Unsupported`.
+1. resolves only an explicit dev runtime or bundled
+   `runtime/libreoffice/program/soffice.exe`;
+2. creates unique system-temp output and profile directories;
+3. starts LibreOffice hidden in headless mode with a timeout and cancellation;
+4. kills the process tree on timeout or cancellation;
+5. checks exit code and expected output;
+6. validates non-zero output, OOXML base ZIP parts, or PDF signature;
+7. verifies the source hash is unchanged;
+8. stages the validated file next to the final target and atomically publishes
+   it without overwrite;
+9. removes temporary output and profile data.
 
-### XLS to XLSX
+Command lines, document contents, stdout, and stderr are not shown to users or
+stored in logs. Diagnostics contain only a stable error code, optional exit
+code, and timeout/cancellation flags.
 
-- Status: Unsupported.
-- Best candidates: NPOI, Aspose.Cells, GemBox.Spreadsheet, Syncfusion Document SDK.
-- Reason: NPOI commercial/revenue EULA terms require explicit approval, while other candidates require commercial licensing or have free limits.
-- Prototype action: detect `.xls`, plan `.xlsx`, show `Unsupported`.
+## Licensing and release gate
 
-### PPT to PPTX
+LibreOffice's official licensing page says that an installation contains
+applicable LICENSE information and that included components can differ by
+version:
 
-- Status: Unsupported.
-- Best candidates: Aspose.Slides, GemBox.Presentation, Syncfusion Document SDK, Telerik presentation components.
-- Reason: no approved MIT-compatible embedded dependency without license activation or evaluation limits was found.
-- Prototype action: detect `.ppt`, plan `.pptx`, show `Unsupported`.
+- https://www.libreoffice.org/licenses/
 
-## Security Notes
+Official source information and release source archives:
 
-- No document contents are logged.
-- No network conversion is allowed.
-- No external executable, CLI, Office automation, LibreOffice, Java, Python, or Pandoc is allowed.
-- Future adapters must validate output existence, non-zero size, and structural integrity before reporting success.
+- https://www.libreoffice.org/download-other/
+- https://download.documentfoundation.org/libreoffice/src/
+
+The repository does not select or commit a LibreOffice distribution.
+`publish-portable.ps1` requires a real package, records its reported version,
+and copies that package's license/notice documents into the artifact. Packaging
+fails if this material cannot be confirmed.
+
+No public release artifact is approved until the chosen build, its complete
+third-party documents, redistribution conditions, corresponding source
+availability, final ZIP contents, and clean-machine behavior have been manually
+reviewed.
+
+## Compatibility limits
+
+LibreOffice conversion is not a promise of pixel-perfect Microsoft Office
+fidelity. Macros, embedded objects, fonts, advanced charts, external links,
+password-protected files, and damaged documents can be unsupported or render
+differently. Output validation confirms container structure and signature, not
+visual equivalence.
+
+XLSX → CSV per sheet is intentionally outside ZL-041.

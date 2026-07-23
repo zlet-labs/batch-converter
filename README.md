@@ -1,26 +1,73 @@
 # Zlet Folder Converter
 
-Local Windows desktop tool for preparing JSON files for NotebookLM. It scans a selected folder, previews every operation, and writes one result per source file under `<selected folder>\_converted`. Source files are never modified or deleted.
+Local Windows desktop tool for bulk, rule-based conversion of mixed files in a
+folder and its subfolders. The application scans files, lets the user choose one
+action per detected format, previews every operation, and writes results under
+`<selected folder>\_converted`.
 
-## Supported
+Files are processed locally. Originals are never overwritten, deleted, moved,
+or intentionally modified. Existing output files and directories are conflicts
+and are not replaced.
 
-- JSON → TXT and JSON → Markdown
-- batch processing
-- optional subfolder scanning with relative folder structure preserved
-- local, offline conversion
-- portable self-contained Windows x64 package
-- conflict detection for existing files and directories
-- per-file failures without stopping the batch
+## Conversion rules
 
-## Not supported
+| Source | Available targets | Default |
+| --- | --- | --- |
+| JSON | TXT, Markdown, Skip | TXT |
+| DOC | DOCX, PDF, Skip | DOCX |
+| XLS | XLSX, PDF, Skip | XLSX |
+| PPT | PPTX, PDF, Skip | PPTX |
+| DOCX | PDF, Skip | Skip |
+| XLSX | PDF, Skip | Skip |
+| PPTX | PDF, Skip | Skip |
+| ODT | DOCX, PDF, Skip | Skip |
+| ODS | XLSX, PDF, Skip | Skip |
+| ODP | PPTX, PDF, Skip | Skip |
+| PDF, images, archives, unknown | Skip | Skip |
 
-- DOC → DOCX, XLS → XLSX, PPT → PPTX
-- XLSX → CSV
-- PDF or OCR
-- combining multiple JSON files
-- cloud conversion
+JSON conversion is implemented by the in-process `JsonConversionAdapter`.
+Office and OpenDocument conversion uses a bundled LibreOffice runtime through
+an adapter and process abstraction. The app does not use Microsoft Office COM,
+cloud conversion, analytics, telemetry, or runtime downloads.
 
-Office files are shown in preview as unsupported; the application does not use Office COM, LibreOffice, external CLIs, or network services.
+LibreOffice runs in headless mode with an isolated temporary profile and
+workspace for each operation. Generated OOXML files are checked as ZIP
+containers with required base parts; PDF files are checked for a PDF signature.
+Conversion compatibility and visual fidelity depend on LibreOffice and the
+source document. The project does not claim 100% preservation of formatting.
+
+XLSX-to-CSV-per-sheet is not part of ZL-041.
+
+## Portable package
+
+The application is .NET self-contained, but the product is not one physical
+standalone EXE. The release layout is:
+
+```text
+ZletFolderConverter/
+  ZletFolderConverter.exe
+  runtime/
+    libreoffice/
+  licenses/
+  THIRD_PARTY_NOTICES.md
+  README_PORTABLE.txt
+```
+
+The package requires no separately installed .NET Runtime, Microsoft Office, or
+LibreOffice. Package size is dominated by the selected LibreOffice runtime and
+must be measured on the actual release artifact.
+
+LibreOffice binaries are not committed to Git. Packaging requires an explicitly
+selected runtime and copies that package's own license documents:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/publish-portable.ps1 `
+  -LibreOfficePath "C:\path\to\LibreOffice"
+```
+
+Packaging fails if the runtime, version, or license material cannot be
+confirmed. No public release artifact should be published until the selected
+LibreOffice build and generated notices have been reviewed.
 
 ## Build and test
 
@@ -28,17 +75,27 @@ Office files are shown in preview as unsupported; the application does not use O
 dotnet restore FolderConverter.sln
 dotnet build FolderConverter.sln -c Release
 dotnet test FolderConverter.sln -c Release
-powershell -ExecutionPolicy Bypass -File scripts/publish-portable.ps1
 ```
 
-The portable ZIP is created under `artifacts\portable\win-x64`.
+Opt-in synthetic LibreOffice integration tests run only when the environment
+variable points to a real runtime:
 
-## Usage
+```powershell
+$env:ZLET_LIBREOFFICE_PATH = "C:\path\to\LibreOffice"
+dotnet test FolderConverter.sln -c Release --filter Category=LibreOfficeIntegration
+```
 
-1. Select a folder.
-2. Choose whether to include subfolders and select `TXT` or `Markdown`.
-3. Click **Проверить файлы** and review paths and conflicts.
-4. Click **Преобразовать файлы**.
-5. Open the `_converted` folder shown in the final summary.
+For local development, the same path can be supplied in the ignored
+`ZletFolderConverter.local.json` file (see the committed empty example). The
+actual local path must not be committed, logged, or included in exports.
 
-Invalid JSON is reported as an error for that file. Existing outputs are never overwritten.
+## Safety details
+
+- root `_converted` is excluded from scans; a nested `archive\_converted` remains
+  a legitimate input folder;
+- temporary Office files matching `~$*` are skipped;
+- directory reparse points, junctions, and symlinks are not traversed;
+- relative subfolder structure is preserved;
+- path traversal and targets outside root `_converted` are rejected;
+- one failed conversion does not stop the rest of the batch;
+- no document contents, command lines, credentials, or secrets are logged.

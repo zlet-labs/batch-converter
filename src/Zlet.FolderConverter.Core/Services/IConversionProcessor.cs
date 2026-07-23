@@ -6,5 +6,6 @@ public interface IConversionProcessor
 {
     Task<ConversionSummary> ProcessAsync(
         IReadOnlyList<PlannedOperation> operations,
+        IProgress<ConversionProgress>? progress,
         CancellationToken cancellationToken);
 }

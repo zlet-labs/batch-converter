@@ -3,7 +3,8 @@ namespace Zlet.FolderConverter.Core.Models;
 public sealed record PlannedOperation(
     string SourcePath,
     string RelativePath,
-    DocumentFormat SourceFormat,
+    SourceFormat SourceFormat,
+    ConversionTarget Target,
     string TargetExtension,
     string TargetPath,
     bool AdapterAvailable,
@@ -11,5 +12,7 @@ public sealed record PlannedOperation(
     string Message,
     string OutputRootPath = "")
 {
-    public string TargetFormat => TargetExtension.TrimStart('.').ToUpperInvariant();
+    public string TargetFormat => Target == ConversionTarget.Skip
+        ? "Не трогать"
+        : Target.ToDisplayName();
 }

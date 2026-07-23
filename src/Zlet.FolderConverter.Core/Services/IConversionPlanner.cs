@@ -7,5 +7,5 @@ public interface IConversionPlanner
     IReadOnlyList<PlannedOperation> CreatePlan(
         ScanResult scanResult,
         string rootPath,
-        OutputFormat outputFormat = OutputFormat.TXT);
+        RuleSet ruleSet);
 }

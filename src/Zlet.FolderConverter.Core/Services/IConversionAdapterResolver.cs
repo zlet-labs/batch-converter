@@ -4,5 +4,5 @@ namespace Zlet.FolderConverter.Core.Services;
 
 public interface IConversionAdapterResolver
 {
-    IConversionAdapter? Resolve(DocumentFormat sourceFormat);
+    IConversionAdapter? Resolve(SourceFormat sourceFormat, ConversionTarget target);
 }

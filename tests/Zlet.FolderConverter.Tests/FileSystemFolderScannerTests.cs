@@ -5,82 +5,63 @@ namespace Zlet.FolderConverter.Tests;
 
 public sealed class FileSystemFolderScannerTests : IDisposable
 {
-    private readonly string _rootPath;
+    private readonly string _rootPath = Path.Combine(
+        Path.GetTempPath(),
+        "zlet-folder-converter-scan-tests",
+        Guid.NewGuid().ToString("N"));
 
-    public FileSystemFolderScannerTests()
-    {
-        _rootPath = Path.Combine(Path.GetTempPath(), "zlet-folder-converter-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_rootPath);
-    }
+    public FileSystemFolderScannerTests() => Directory.CreateDirectory(_rootPath);
 
     [Fact]
-    public async Task ScanAsync_detects_doc_xls_ppt_and_counts_them()
+    public async Task ScanAsync_finds_mixed_known_and_unknown_files()
     {
-        WriteSyntheticFile("one.doc");
-        WriteSyntheticFile("two.xls");
-        WriteSyntheticFile("three.ppt");
+        Write("one.json");
+        Write("two.docx");
+        Write("three.pdf");
+        Write("four.png");
+        Write("five.bin");
 
         var result = await ScanAsync(includeSubfolders: false);
 
-        Assert.Equal(3, result.Files.Count);
-        Assert.Equal(1, result.DocCount);
-        Assert.Equal(1, result.XlsCount);
-        Assert.Equal(1, result.PptCount);
+        Assert.Equal(5, result.Files.Count);
+        Assert.Contains(result.Files, file => file.Format == SourceFormat.Json);
+        Assert.Contains(result.Files, file => file.Format == SourceFormat.Docx);
+        Assert.Contains(result.Files, file => file.Format == SourceFormat.Pdf);
+        Assert.Contains(result.Files, file => file.Format == SourceFormat.Image);
+        Assert.Contains(result.Files, file => file.Format == SourceFormat.Unknown);
     }
 
     [Fact]
     public async Task ScanAsync_excludes_temporary_office_files()
     {
-        WriteSyntheticFile("~$draft.doc");
-        WriteSyntheticFile("normal.doc");
+        Write("~$draft.doc");
+        Write("normal.doc");
 
         var result = await ScanAsync(includeSubfolders: false);
 
-        Assert.Single(result.Files);
-        Assert.Equal("normal.doc", result.Files[0].RelativePath);
-        Assert.True(FileSystemFolderScanner.IsOfficeTemporaryFile(Path.Combine(_rootPath, "~$draft.doc")));
+        Assert.Equal("normal.doc", Assert.Single(result.Files).RelativePath);
     }
 
     [Fact]
-    public async Task ScanAsync_excludes_converted_directories()
+    public async Task ScanAsync_excludes_root_converted_but_includes_nested_converted()
     {
-        WriteSyntheticFile(Path.Combine("_converted", "old.doc"));
-        WriteSyntheticFile("source.doc");
+        Write(Path.Combine("_converted", "ignored.json"));
+        Write(Path.Combine("archive", "_converted", "included.json"));
 
         var result = await ScanAsync(includeSubfolders: true);
 
-        Assert.Single(result.Files);
-        Assert.Equal("source.doc", result.Files[0].RelativePath);
-        Assert.True(FileSystemFolderScanner.IsConvertedDirectory(Path.Combine(_rootPath, "_converted"), _rootPath));
-    }
-
-    [Fact]
-    public async Task ScanAsync_excludes_only_root_converted_directory()
-    {
-        WriteSyntheticFile(Path.Combine("_converted", "ignored.json"));
-        WriteSyntheticFile(Path.Combine("archive", "_converted", "old.json"));
-
-        var result = await ScanAsync(includeSubfolders: true);
-
-        var file = Assert.Single(result.Files);
-        Assert.Equal(Path.Combine("archive", "_converted", "old.json"), file.RelativePath);
-    }
-
-    [Fact]
-    public async Task ScanAsync_detects_json_and_counts_it()
-    {
-        WriteSyntheticFile("one.JSON");
-
-        var result = await ScanAsync(includeSubfolders: false);
-
-        Assert.Equal(1, result.JsonCount);
-        Assert.Equal(DocumentFormat.Json, Assert.Single(result.Files).Format);
+        Assert.Equal(
+            Path.Combine("archive", "_converted", "included.json"),
+            Assert.Single(result.Files).RelativePath);
     }
 
     [Fact]
     public async Task ScanAsync_does_not_follow_reparse_directory_when_supported()
     {
-        var external = Path.Combine(Path.GetTempPath(), "zlet-folder-converter-link-target", Guid.NewGuid().ToString("N"));
+        var external = Path.Combine(
+            Path.GetTempPath(),
+            "zlet-folder-converter-link-target",
+            Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(external);
         File.WriteAllText(Path.Combine(external, "linked.json"), "{}");
         var link = Path.Combine(_rootPath, "linked");
@@ -90,14 +71,17 @@ public sealed class FileSystemFolderScannerTests : IDisposable
             {
                 Directory.CreateSymbolicLink(link, external);
             }
-            catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
+            catch (Exception exception) when (exception is UnauthorizedAccessException
+                                               or IOException
+                                               or NotSupportedException)
             {
                 return;
             }
 
             var result = await ScanAsync(includeSubfolders: true);
-            Assert.DoesNotContain(result.Files, file => file.RelativePath.Contains("linked", StringComparison.Ordinal));
-            Assert.True(FileSystemFolderScanner.IsReparseDirectory(link));
+
+            Assert.DoesNotContain(result.Files, file =>
+                file.RelativePath.Contains("linked", StringComparison.Ordinal));
         }
         finally
         {
@@ -108,41 +92,28 @@ public sealed class FileSystemFolderScannerTests : IDisposable
         }
     }
 
-    [Fact]
-    public async Task ScanAsync_respects_include_subfolders_false()
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 2)]
+    public async Task ScanAsync_respects_include_subfolders(bool includeSubfolders, int expected)
     {
-        WriteSyntheticFile("root.doc");
-        WriteSyntheticFile(Path.Combine("nested", "child.xls"));
+        Write("root.doc");
+        Write(Path.Combine("nested", "child.xls"));
 
-        var result = await ScanAsync(includeSubfolders: false);
+        var result = await ScanAsync(includeSubfolders);
 
-        Assert.Single(result.Files);
-        Assert.Equal("root.doc", result.Files[0].RelativePath);
+        Assert.Equal(expected, result.Files.Count);
     }
 
     [Fact]
-    public async Task ScanAsync_respects_include_subfolders_true()
+    public async Task ScanAsync_preserves_spaces_cyrillic_and_unicode()
     {
-        WriteSyntheticFile("root.doc");
-        WriteSyntheticFile(Path.Combine("nested", "child.xls"));
+        var relativePath = Path.Combine("договоры с пробелами", "файл Ω.doc");
+        Write(relativePath);
 
         var result = await ScanAsync(includeSubfolders: true);
 
-        Assert.Equal(2, result.Files.Count);
-        Assert.Contains(result.Files, file => file.RelativePath == Path.Combine("nested", "child.xls"));
-    }
-
-    [Fact]
-    public async Task ScanAsync_preserves_relative_paths_with_spaces_cyrillic_and_unicode()
-    {
-        var relativePath = Path.Combine("договоры с пробелами", "тестовый файл Ω.doc");
-        WriteSyntheticFile(relativePath);
-
-        var result = await ScanAsync(includeSubfolders: true);
-
-        var file = Assert.Single(result.Files);
-        Assert.Equal(relativePath, file.RelativePath);
-        Assert.Equal(DocumentFormat.Doc, file.Format);
+        Assert.Equal(relativePath, Assert.Single(result.Files).RelativePath);
     }
 
     public void Dispose()
@@ -153,16 +124,16 @@ public sealed class FileSystemFolderScannerTests : IDisposable
         }
     }
 
-    private Task<ScanResult> ScanAsync(bool includeSubfolders)
-    {
-        var scanner = new FileSystemFolderScanner();
-        return scanner.ScanAsync(_rootPath, includeSubfolders, CancellationToken.None);
-    }
+    private Task<ScanResult> ScanAsync(bool includeSubfolders) =>
+        new FileSystemFolderScanner().ScanAsync(
+            _rootPath,
+            includeSubfolders,
+            CancellationToken.None);
 
-    private void WriteSyntheticFile(string relativePath)
+    private void Write(string relativePath)
     {
         var path = Path.Combine(_rootPath, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, "synthetic test fixture");
+        File.WriteAllText(path, "synthetic fixture");
     }
 }

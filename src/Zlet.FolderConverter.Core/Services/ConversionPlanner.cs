@@ -7,67 +7,149 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
     public IReadOnlyList<PlannedOperation> CreatePlan(
         ScanResult scanResult,
         string rootPath,
-        OutputFormat outputFormat = OutputFormat.TXT)
+        RuleSet ruleSet)
     {
         ArgumentNullException.ThrowIfNull(scanResult);
+        ArgumentNullException.ThrowIfNull(ruleSet);
         ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
 
         var fullRootPath = Path.GetFullPath(rootPath);
         var targetRootPath = Path.Combine(fullRootPath, "_converted");
 
         return scanResult.Files
-            .Select(file => CreateOperation(file, targetRootPath, outputFormat))
+            .Select(file => CreateOperation(file, fullRootPath, targetRootPath, ruleSet.GetRule(file.Format)))
             .ToArray();
     }
 
     private PlannedOperation CreateOperation(
         ScannedFile file,
+        string sourceRootPath,
         string targetRootPath,
-        OutputFormat outputFormat)
+        ConversionRule rule)
     {
-        var targetExtension = DocumentFormatDetector.GetTargetExtension(file.Format, outputFormat);
-        var targetRelativePath = Path.ChangeExtension(file.RelativePath, targetExtension);
-        var targetPath = Path.Combine(targetRootPath, targetRelativePath);
-        var adapter = adapterResolver.Resolve(file.Format);
+        if (rule.Target == ConversionTarget.Skip)
+        {
+            return Create(
+                file,
+                rule.Target,
+                string.Empty,
+                string.Empty,
+                false,
+                OperationStatus.Skipped,
+                "Файл не будет изменён.",
+                targetRootPath);
+        }
+
+        if (!FormatCapabilityCatalog.Get(file.Format).Supports(rule.Target))
+        {
+            return Create(
+                file,
+                rule.Target,
+                rule.Target.ToExtension(),
+                string.Empty,
+                false,
+                OperationStatus.Unsupported,
+                "Выбранное преобразование не поддерживается.",
+                targetRootPath);
+        }
+
+        var targetExtension = rule.Target.ToExtension();
+        if (!OutputPathGuard.TryBuildTargetPath(
+                sourceRootPath,
+                targetRootPath,
+                file.SourcePath,
+                file.RelativePath,
+                targetExtension,
+                out var targetPath))
+        {
+            return Create(
+                file,
+                rule.Target,
+                targetExtension,
+                string.Empty,
+                false,
+                OperationStatus.Failed,
+                "Недопустимый путь результата.",
+                targetRootPath);
+        }
+
+        var adapter = adapterResolver.Resolve(file.Format, rule.Target);
         var adapterAvailable = adapter?.IsAvailable == true;
 
         if (File.Exists(targetPath) || Directory.Exists(targetPath))
         {
-            return new PlannedOperation(
-                file.SourcePath,
-                file.RelativePath,
-                file.Format,
+            return Create(
+                file,
+                rule.Target,
                 targetExtension,
                 targetPath,
                 adapterAvailable,
                 OperationStatus.Conflict,
-                "Target file already exists and will not be overwritten.",
+                "Файл результата уже существует.",
+                targetRootPath);
+        }
+
+        if (adapter is null)
+        {
+            return Create(
+                file,
+                rule.Target,
+                targetExtension,
+                targetPath,
+                false,
+                OperationStatus.Unsupported,
+                "Выбранное преобразование не поддерживается.",
                 targetRootPath);
         }
 
         if (!adapterAvailable)
         {
-            return new PlannedOperation(
-                file.SourcePath,
-                file.RelativePath,
-                file.Format,
+            var status = FormatCapabilityCatalog.RequiresLibreOffice(file.Format, rule.Target)
+                ? OperationStatus.EngineUnavailable
+                : OperationStatus.Unsupported;
+            var message = status == OperationStatus.EngineUnavailable
+                ? "LibreOffice не найден в portable package."
+                : "Выбранное преобразование не поддерживается.";
+            return Create(
+                file,
+                rule.Target,
                 targetExtension,
                 targetPath,
                 false,
-                OperationStatus.Unsupported,
-                adapter?.AvailabilityMessage ?? "No confirmed embedded converter is available for this format.",
+                status,
+                message,
                 targetRootPath);
         }
 
-        return new PlannedOperation(
-            file.SourcePath,
-            file.RelativePath,
-            file.Format,
+        return Create(
+            file,
+            rule.Target,
             targetExtension,
             targetPath,
             true,
             OperationStatus.Ready,
-            "Ready to convert with a confirmed embedded adapter.",
+            "Готово к преобразованию.",
             targetRootPath);
     }
+
+    private static PlannedOperation Create(
+        ScannedFile file,
+        ConversionTarget target,
+        string targetExtension,
+        string targetPath,
+        bool adapterAvailable,
+        OperationStatus status,
+        string message,
+        string outputRootPath) =>
+        new(
+            file.SourcePath,
+            file.RelativePath,
+            file.Format,
+            target,
+            targetExtension,
+            targetPath,
+            adapterAvailable,
+            status,
+            message,
+            outputRootPath);
 }

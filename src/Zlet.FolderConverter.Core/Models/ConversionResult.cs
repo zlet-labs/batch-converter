@@ -4,4 +4,4 @@ public sealed record ConversionResult(
     PlannedOperation Operation,
     OperationStatus Status,
     string Message,
-    Exception? Exception = null);
+    ConversionDiagnostic? Diagnostic = null);

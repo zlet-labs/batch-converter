@@ -4,13 +4,11 @@ namespace Zlet.FolderConverter.Core.Services;
 
 public interface IConversionAdapter
 {
-    DocumentFormat SourceFormat { get; }
-
-    string TargetExtension { get; }
-
     bool IsAvailable { get; }
 
     string AvailabilityMessage { get; }
+
+    bool CanConvert(SourceFormat sourceFormat, ConversionTarget target);
 
     Task<ConversionResult> ConvertAsync(
         PlannedOperation operation,

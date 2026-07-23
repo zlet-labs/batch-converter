@@ -3,24 +3,22 @@ using Zlet.FolderConverter.Core.Models;
 namespace Zlet.FolderConverter.Core.Services;
 
 public sealed class UnsupportedConversionAdapter(
-    DocumentFormat sourceFormat,
-    string targetExtension,
+    SourceFormat sourceFormat,
+    ConversionTarget target,
     string availabilityMessage) : IConversionAdapter
 {
-    public DocumentFormat SourceFormat { get; } = sourceFormat;
-
-    public string TargetExtension { get; } = targetExtension;
-
     public bool IsAvailable => false;
 
     public string AvailabilityMessage { get; } = availabilityMessage;
+
+    public bool CanConvert(SourceFormat candidateSource, ConversionTarget candidateTarget) =>
+        candidateSource == sourceFormat && candidateTarget == target;
 
     public Task<ConversionResult> ConvertAsync(
         PlannedOperation operation,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
         return Task.FromResult(new ConversionResult(
             operation,
             OperationStatus.Unsupported,

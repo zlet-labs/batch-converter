@@ -3,9 +3,11 @@ namespace Zlet.FolderConverter.Core.Models;
 public enum OperationStatus
 {
     Ready,
-    Unsupported,
+    Skipped,
+    Converting,
+    Succeeded,
     Conflict,
     Failed,
-    Succeeded,
-    Skipped
+    EngineUnavailable,
+    Unsupported
 }

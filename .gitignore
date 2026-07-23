@@ -428,3 +428,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Local developer settings for Folder Converter
+ZletFolderConverter.local.json

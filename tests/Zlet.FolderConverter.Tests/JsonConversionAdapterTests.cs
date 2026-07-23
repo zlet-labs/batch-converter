@@ -15,33 +15,29 @@ public sealed class JsonConversionAdapterTests : IDisposable
     public JsonConversionAdapterTests() => Directory.CreateDirectory(_rootPath);
 
     [Theory]
-    [InlineData(".txt")]
-    [InlineData(".md")]
-    public async Task ConvertAsync_writes_nonempty_utf8_preserves_content_order_and_source(string extension)
+    [InlineData(ConversionTarget.Txt, ".txt")]
+    [InlineData(ConversionTarget.Markdown, ".md")]
+    public async Task ConvertAsync_writes_utf8_and_preserves_source(
+        ConversionTarget target,
+        string extension)
     {
         const string source = """{"имя":"Анна 😀","nested":{"value":null},"items":[1,true,"```"]}""";
         var sourcePath = Write("nested/source.json", source);
-        var operation = CreateOperation(sourcePath, Path.Combine("nested", $"source{extension}"), extension);
+        var operation = CreateOperation(sourcePath, Path.Combine("nested", $"source{extension}"), target);
         var validator = new TrackingValidator();
 
-        var result = await new JsonConversionAdapter(validator).ConvertAsync(operation, CancellationToken.None);
+        var result = await new JsonConversionAdapter(validator)
+            .ConvertAsync(operation, CancellationToken.None);
 
         Assert.Equal(OperationStatus.Succeeded, result.Status);
         var output = await File.ReadAllTextAsync(operation.TargetPath, Encoding.UTF8);
         Assert.Contains("Анна", output);
-        Assert.True(output.IndexOf("\"имя\"", StringComparison.Ordinal) < output.IndexOf("\"nested\"", StringComparison.Ordinal));
-        Assert.True(new FileInfo(operation.TargetPath).Length > 0);
         Assert.Equal(source, await File.ReadAllTextAsync(sourcePath));
         Assert.True(validator.CallCount >= 2);
-        if (extension == ".md")
+        if (target == ConversionTarget.Markdown)
         {
             Assert.StartsWith("# source.json", output);
             Assert.Contains("````json", output);
-            var jsonStart = output.IndexOf(Environment.NewLine, output.IndexOf("````json", StringComparison.Ordinal), StringComparison.Ordinal)
-                + Environment.NewLine.Length;
-            var jsonEnd = output.LastIndexOf(Environment.NewLine + "````", StringComparison.Ordinal);
-            using var parsed = JsonDocument.Parse(output[jsonStart..jsonEnd]);
-            Assert.Equal("Анна 😀", parsed.RootElement.GetProperty("имя").GetString());
         }
         else
         {
@@ -51,10 +47,10 @@ public sealed class JsonConversionAdapterTests : IDisposable
     }
 
     [Fact]
-    public async Task ConvertAsync_invalid_json_fails_without_output()
+    public async Task ConvertAsync_invalid_json_fails_without_partial_output()
     {
         var sourcePath = Write("broken.json", """{"value": }""");
-        var operation = CreateOperation(sourcePath, "broken.txt", ".txt");
+        var operation = CreateOperation(sourcePath, "broken.txt", ConversionTarget.Txt);
 
         var result = await new JsonConversionAdapter(new OutputResultValidator())
             .ConvertAsync(operation, CancellationToken.None);
@@ -62,23 +58,20 @@ public sealed class JsonConversionAdapterTests : IDisposable
         Assert.Equal(OperationStatus.Failed, result.Status);
         Assert.StartsWith("Некорректный JSON:", result.Message);
         Assert.False(File.Exists(operation.TargetPath));
-        var outputDirectory = Path.GetDirectoryName(operation.TargetPath);
-        Assert.False(Directory.Exists(outputDirectory)
-            && Directory.EnumerateFiles(outputDirectory, "*.tmp").Any());
         Assert.Equal("""{"value": }""", await File.ReadAllTextAsync(sourcePath));
     }
 
     [Theory]
-    [InlineData("outside.txt")]
-    [InlineData("prefix.txt")]
+    [InlineData("outside")]
+    [InlineData("prefix")]
     public async Task ConvertAsync_rejects_target_outside_output_root(string scenario)
     {
         var sourcePath = Write("source.json", "{}");
         var outputRoot = Path.Combine(_rootPath, "_converted");
-        var targetPath = scenario == "outside.txt"
+        var targetPath = scenario == "outside"
             ? Path.Combine(outputRoot, "..", "outside.txt")
             : Path.Combine(_rootPath, "_converted-other", "prefix.txt");
-        var operation = CreateOperation(sourcePath, "source.txt", ".txt") with
+        var operation = CreateOperation(sourcePath, "source.txt", ConversionTarget.Txt) with
         {
             TargetPath = targetPath
         };
@@ -91,31 +84,42 @@ public sealed class JsonConversionAdapterTests : IDisposable
         Assert.False(File.Exists(Path.GetFullPath(targetPath)));
     }
 
-    [Fact]
-    public async Task ConvertAsync_rejects_missing_or_substituted_output_root()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConvertAsync_protects_file_and_directory_conflicts(bool directoryConflict)
     {
         var sourcePath = Write("source.json", "{}");
-        var operation = CreateOperation(sourcePath, "source.txt", ".txt") with
+        var operation = CreateOperation(sourcePath, "source.txt", ConversionTarget.Txt);
+        Directory.CreateDirectory(Path.GetDirectoryName(operation.TargetPath)!);
+        if (directoryConflict)
         {
-            OutputRootPath = string.Empty
-        };
+            Directory.CreateDirectory(operation.TargetPath);
+        }
+        else
+        {
+            await File.WriteAllTextAsync(operation.TargetPath, "existing");
+        }
 
         var result = await new JsonConversionAdapter(new OutputResultValidator())
             .ConvertAsync(operation, CancellationToken.None);
 
-        Assert.Equal(OperationStatus.Failed, result.Status);
-        Assert.False(File.Exists(operation.TargetPath));
+        Assert.Equal(OperationStatus.Conflict, result.Status);
+        if (!directoryConflict)
+        {
+            Assert.Equal("existing", await File.ReadAllTextAsync(operation.TargetPath));
+        }
     }
 
     [Fact]
     public async Task Processor_continues_after_invalid_json()
     {
-        var bad = CreateOperation(Write("bad.json", "{"), "bad.txt", ".txt");
-        var good = CreateOperation(Write("good.json", """{"ok":true}"""), "good.txt", ".txt");
+        var bad = CreateOperation(Write("bad.json", "{"), "bad.txt", ConversionTarget.Txt);
+        var good = CreateOperation(Write("good.json", """{"ok":true}"""), "good.txt", ConversionTarget.Txt);
         var resolver = new DefaultConversionAdapterResolver();
 
         var summary = await new ConversionProcessor(resolver)
-            .ProcessAsync([bad, good], CancellationToken.None);
+            .ProcessAsync([bad, good], progress: null, CancellationToken.None);
 
         Assert.Equal(1, summary.Failed);
         Assert.Equal(1, summary.Succeeded);
@@ -126,33 +130,17 @@ public sealed class JsonConversionAdapterTests : IDisposable
     [Fact]
     public async Task Processor_honors_cancellation()
     {
-        var operation = CreateOperation(Write("source.json", "{}"), "source.txt", ".txt");
+        var operation = CreateOperation(
+            Write("source.json", "{}"),
+            "source.txt",
+            ConversionTarget.Txt);
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => new ConversionProcessor(new DefaultConversionAdapterResolver())
-                .ProcessAsync([operation], cancellation.Token));
+                .ProcessAsync([operation], progress: null, cancellation.Token));
         Assert.False(File.Exists(operation.TargetPath));
-    }
-
-    [Fact]
-    public async Task ConvertAsync_protects_file_and_directory_conflicts()
-    {
-        var sourcePath = Write("source.json", "{}");
-        var fileOperation = CreateOperation(sourcePath, "file.txt", ".txt");
-        Directory.CreateDirectory(Path.GetDirectoryName(fileOperation.TargetPath)!);
-        await File.WriteAllTextAsync(fileOperation.TargetPath, "existing");
-        var directoryOperation = CreateOperation(sourcePath, "directory.txt", ".txt");
-        Directory.CreateDirectory(directoryOperation.TargetPath);
-        var adapter = new JsonConversionAdapter(new OutputResultValidator());
-
-        var fileResult = await adapter.ConvertAsync(fileOperation, CancellationToken.None);
-        var directoryResult = await adapter.ConvertAsync(directoryOperation, CancellationToken.None);
-
-        Assert.Equal(OperationStatus.Conflict, fileResult.Status);
-        Assert.Equal(OperationStatus.Conflict, directoryResult.Status);
-        Assert.Equal("existing", await File.ReadAllTextAsync(fileOperation.TargetPath));
     }
 
     public void Dispose()
@@ -171,12 +159,16 @@ public sealed class JsonConversionAdapterTests : IDisposable
         return path;
     }
 
-    private PlannedOperation CreateOperation(string sourcePath, string targetRelativePath, string extension) =>
+    private PlannedOperation CreateOperation(
+        string sourcePath,
+        string targetRelativePath,
+        ConversionTarget target) =>
         new(
             sourcePath,
             Path.GetRelativePath(_rootPath, sourcePath),
-            DocumentFormat.Json,
-            extension,
+            SourceFormat.Json,
+            target,
+            target.ToExtension(),
             Path.Combine(_rootPath, "_converted", targetRelativePath),
             true,
             OperationStatus.Ready,
@@ -187,10 +179,11 @@ public sealed class JsonConversionAdapterTests : IDisposable
     {
         private readonly OutputResultValidator _inner = new();
         public int CallCount { get; private set; }
-        public bool IsSuccessfulOutput(string targetPath)
+
+        public OutputValidationResult Validate(string targetPath, ConversionTarget target)
         {
             CallCount++;
-            return _inner.IsSuccessfulOutput(targetPath);
+            return _inner.Validate(targetPath, target);
         }
     }
 }

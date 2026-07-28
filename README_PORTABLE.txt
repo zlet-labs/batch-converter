@@ -1,7 +1,7 @@
-Zlet Batch Converter v0.0.0
+Zlet Batch Converter v0.0.1
 ================================
 
-Архив: ZletBatchConverter-v0.0.0-win-x64.zip
+Архив: ZletBatchConverter-v0.0.1-win-x64.zip
 
 1. Полностью распакуйте ZIP в обычную локальную папку.
 2. Запустите ZletBatchConverter.exe.

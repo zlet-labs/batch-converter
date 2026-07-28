@@ -11,7 +11,7 @@ PowerPoint versions, ZIP size, unpacked size, commit SHA, and tester name.
 - Confirm there are no source, test, local config, Python, Java, or Office
   runtime files.
 - Start `ZletBatchConverter.exe` from the fully extracted folder.
-- Confirm the title is `Zlet Batch Converter v0.0.0`.
+- Confirm the title is `Zlet Batch Converter v0.0.1`.
 
 ## Office capability display
 

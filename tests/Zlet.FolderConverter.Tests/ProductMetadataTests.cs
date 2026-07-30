@@ -41,7 +41,7 @@ public sealed class ProductMetadataTests
     }
 
     [Fact]
-    public void Repository_documents_use_new_product_but_keep_current_repository_url()
+    public void Repository_documents_use_new_product_and_current_repository_url()
     {
         var root = FindRepositoryRoot();
         var readme = File.ReadAllText(Path.Combine(root, "README.md"));
@@ -49,7 +49,7 @@ public sealed class ProductMetadataTests
 
         Assert.Contains("# Zlet Batch Converter", readme);
         Assert.Contains("v0.0.1", readme);
-        Assert.Contains("https://github.com/zlet-labs/folder-converter", readme);
+        Assert.Contains("https://github.com/zlet-labs/batch-converter", readme);
         Assert.Contains("ZletBatchConverter-v0.0.1-win-x64.zip", portableReadme);
         Assert.DoesNotContain("Zlet Folder Converter", readme);
     }

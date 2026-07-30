@@ -11,10 +11,10 @@ thread, emits JSON lifecycle/result messages to stdout, and exits after one
 operation. The WPF process applies a timeout and remains responsive.
 
 Before activation the worker records existing PIDs for the specific Office
-application. Immediately after COM activation it resolves the PID from the
-application HWND when that property is available. Word builds that do not
-publish `Application.Hwnd` use the single new `WINWORD` PID relative to the
-baseline. The worker then emits `Started` before changing any Office setting.
+application. Immediately after COM activation it identifies the new Office
+process relative to that baseline. Excel can additionally provide its HWND;
+Word and PowerPoint do not require `Application.Hwnd`. The worker emits
+`Started` before changing any Office setting or opening a document.
 On timeout/cancellation the WPF process terminates the worker, drains
 stdout/stderr for a bounded interval, and then rechecks ownership. A PID is
 eligible for termination only when it was absent from the baseline and its
@@ -41,6 +41,7 @@ References:
 - `DisplayAlerts = false`
 - `AutomationSecurity = 3`
 - `AskToUpdateLinks = false`
+- `EnableEvents = false`
 - `Workbooks.Open`: `UpdateLinks = 0`, read-only, no MRU, normal load
 - `Workbook.SaveAs`: `FileFormat = 51` (`xlOpenXMLWorkbook`, XLSX)
 
@@ -55,12 +56,13 @@ References:
 - If any `POWERPNT` process exists in the pre-activation baseline, the worker
   returns `powerpoint_already_running` without creating COM automation,
   changing settings, opening a presentation, or calling `Quit`.
-- `Visible = 0` (`msoFalse`)
+- PowerPoint automation does not read `Application.HWND` and does not assign
+  `Application.Visible`.
 - `DisplayAlerts = 1` (`ppAlertsNone`)
 - `AutomationSecurity = 3`
 - `Presentations.Open`: read-only and without a window
 - `Presentation.SaveAs`: `FileFormat = 24`
-  (`ppSaveAsOpenXMLPresentation`, PPTX)
+  (`ppSaveAsOpenXMLPresentation`, PPTX), `EmbedTrueTypeFonts = 0`
 
 References:
 

@@ -17,6 +17,50 @@ public sealed class ComOfficeAutomationTests
     }
 
     [Fact]
+    public void Powerpoint_does_not_require_hWnd_com_property()
+    {
+        var session = new ComOfficeAutomationSession(
+            OfficeApplicationKind.PowerPoint,
+            new object());
+
+        Assert.Equal(0, session.WindowHandle);
+    }
+
+    [Fact]
+    public void Powerpoint_configuration_does_not_try_to_hide_application()
+    {
+        var application = new FakePowerPointApplication();
+        var session = new ComOfficeAutomationSession(
+            OfficeApplicationKind.PowerPoint,
+            application);
+
+        session.Configure();
+
+        Assert.False(application.VisibleWasSet);
+        Assert.Equal(1, application.DisplayAlerts);
+        Assert.Equal(3, application.AutomationSecurity);
+    }
+
+    [Fact]
+    public void Powerpoint_save_uses_embed_true_type_fonts_parameter()
+    {
+        var application = new FakePowerPointApplication();
+        var session = new ComOfficeAutomationSession(
+            OfficeApplicationKind.PowerPoint,
+            application);
+
+        session.OpenAndSave(new OfficeWorkerRequest(
+            OfficeApplicationKind.PowerPoint,
+            "source.ppt",
+            "result.pptx"));
+
+        Assert.Equal("source.ppt", application.Presentations.SourcePath);
+        Assert.Equal("result.pptx", application.Presentations.Presentation.OutputPath);
+        Assert.Equal(24, application.Presentations.Presentation.FileFormat);
+        Assert.Equal(0, application.Presentations.Presentation.EmbedTrueTypeFonts);
+    }
+
+    [Fact]
     public void Powerpoint_already_running_does_not_create_com()
     {
         var events = new List<string>();
@@ -147,6 +191,58 @@ public sealed class ComOfficeAutomationTests
                 automation.ConvertPowerPoint(Request(application), report),
             _ => throw new ArgumentOutOfRangeException(nameof(application))
         };
+
+    public sealed class FakePowerPointApplication
+    {
+        public bool VisibleWasSet { get; private set; }
+        public int DisplayAlerts { get; set; }
+        public int AutomationSecurity { get; set; }
+        public FakePowerPointPresentations Presentations { get; } = new();
+
+        public int Visible
+        {
+            set
+            {
+                VisibleWasSet = true;
+                throw new COMException(
+                    "Application.Visible: hiding is not allowed.",
+                    unchecked((int)0x80048240));
+            }
+        }
+    }
+
+    public sealed class FakePowerPointPresentations
+    {
+        public string SourcePath { get; private set; } = string.Empty;
+        public FakePowerPointPresentation Presentation { get; } = new();
+
+        public FakePowerPointPresentation Open(
+            string FileName,
+            int ReadOnly,
+            int Untitled,
+            int WithWindow)
+        {
+            SourcePath = FileName;
+            return Presentation;
+        }
+    }
+
+    public sealed class FakePowerPointPresentation
+    {
+        public string OutputPath { get; private set; } = string.Empty;
+        public int FileFormat { get; private set; }
+        public int EmbedTrueTypeFonts { get; private set; }
+
+        public void SaveAs(
+            string FileName,
+            int FileFormat,
+            int EmbedTrueTypeFonts)
+        {
+            OutputPath = FileName;
+            this.FileFormat = FileFormat;
+            this.EmbedTrueTypeFonts = EmbedTrueTypeFonts;
+        }
+    }
 
     private sealed class FakeSessionFactory(List<string> events)
         : IOfficeAutomationSessionFactory

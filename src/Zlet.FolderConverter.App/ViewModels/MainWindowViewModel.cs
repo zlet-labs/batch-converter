@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Windows.Threading;
 using Zlet.FolderConverter.App;
 using Zlet.FolderConverter.Core.Models;
 using Zlet.FolderConverter.Core.Services;
@@ -14,6 +15,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly IConversionPlanner _conversionPlanner;
     private readonly IConversionProcessor _conversionProcessor;
     private readonly IReadOnlyList<OfficeApplicationAvailability> _officeAvailability;
+    private readonly TimeProvider _timeProvider;
+    private readonly DispatcherTimer _progressTimer;
     private string _selectedFolder = string.Empty;
     private string _sourcePathError = string.Empty;
     private bool _includeSubfolders = true;
@@ -34,6 +37,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private int _errorCount;
     private double _progressPercent;
     private string _currentFile = string.Empty;
+    private int _progressCompleted;
+    private int _progressTotal;
+    private long _conversionStartTimestamp;
+    private string _elapsedTimeText = "Прошло: 00:00";
+    private string _remainingTimeText = "Осталось: рассчитываем…";
+    private string _finalDurationText = string.Empty;
     private bool _hasFinalReport;
     private int _finalSucceeded;
     private int _finalFailed;
@@ -60,7 +69,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IFolderScanner folderScanner,
         IConversionPlanner conversionPlanner,
         IConversionProcessor? conversionProcessor = null,
-        IMicrosoftOfficeCapabilityDetector? officeCapabilityDetector = null)
+        IMicrosoftOfficeCapabilityDetector? officeCapabilityDetector = null,
+        TimeProvider? timeProvider = null)
     {
         _folderScanner = folderScanner;
         _conversionPlanner = conversionPlanner;
@@ -68,6 +78,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             ?? new ConversionProcessor(new DefaultConversionAdapterResolver());
         _officeAvailability = (officeCapabilityDetector
             ?? new MicrosoftOfficeCapabilityDetector()).Detect();
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _progressTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+        _progressTimer.Tick += (_, _) => RefreshConversionTiming();
         PreviewFilters =
         [
             new(PreviewFilter.All, "Все"),
@@ -388,13 +404,40 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public double ProgressPercent
     {
         get => _progressPercent;
-        private set => SetProperty(ref _progressPercent, value);
+        private set
+        {
+            if (SetProperty(ref _progressPercent, value))
+            {
+                OnPropertyChanged(nameof(ProgressPercentText));
+            }
+        }
     }
+
+    public string ProgressPercentText => $"{ProgressPercent:0}%";
+    public string ProgressCountText => $"{_progressCompleted} из {_progressTotal}";
 
     public string CurrentFile
     {
         get => _currentFile;
         private set => SetProperty(ref _currentFile, value);
+    }
+
+    public string ElapsedTimeText
+    {
+        get => _elapsedTimeText;
+        private set => SetProperty(ref _elapsedTimeText, value);
+    }
+
+    public string RemainingTimeText
+    {
+        get => _remainingTimeText;
+        private set => SetProperty(ref _remainingTimeText, value);
+    }
+
+    public string FinalDurationText
+    {
+        get => _finalDurationText;
+        private set => SetProperty(ref _finalDurationText, value);
     }
 
     public bool HasFinalReport
@@ -552,8 +595,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         IsConverting = true;
         HasFinalReport = false;
+        _progressCompleted = 0;
+        _progressTotal = operations.Length;
+        OnPropertyChanged(nameof(ProgressCountText));
         ProgressPercent = 0;
         CurrentFile = string.Empty;
+        FinalDurationText = string.Empty;
+        _conversionStartTimestamp = _timeProvider.GetTimestamp();
+        RefreshConversionTiming();
+        _progressTimer.Start();
         StateMessage = "Преобразуем файлы...";
         var progress = new InlineProgress<ConversionProgress>(UpdateProgress);
 
@@ -614,7 +664,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     selectionChanged: SelectionChanged));
                 if (result.Status == OperationStatus.Failed)
                 {
-                    AddError($"{result.Operation.RelativePath}: {result.Message}");
+                    AddError(FormatConversionError(result));
                 }
             }
 
@@ -632,6 +682,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 row.Operation.Status == OperationStatus.Skipped);
             FinalNotSelected = unprocessedRows.Count(row =>
                 row.Operation.Status == OperationStatus.Ready && !row.IsSelected);
+            _progressCompleted = operations.Length;
+            _progressTotal = operations.Length;
+            ProgressPercent = 100;
+            OnPropertyChanged(nameof(ProgressCountText));
+            RefreshConversionTiming();
+            FinalDurationText = $"Время выполнения: {FormatDuration(GetConversionElapsed())}";
             ResultFolder = SelectedOutputMode == OutputMode.Folder
                 ? NormalizePathInput(OutputPath)
                 : File.Exists(NormalizePathInput(OutputPath))
@@ -650,6 +706,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
         finally
         {
+            _progressTimer.Stop();
             if (SelectedOutputMode == OutputMode.Zip)
             {
                 TryDeleteZipStaging();
@@ -774,10 +831,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void UpdateProgress(ConversionProgress progress)
     {
+        _progressCompleted = progress.Completed;
+        _progressTotal = progress.Total;
+        OnPropertyChanged(nameof(ProgressCountText));
         CurrentFile = progress.RelativePath;
         ProgressPercent = progress.Total == 0
             ? 0
             : Math.Clamp(progress.Completed * 100d / progress.Total, 0, 100);
+        RefreshConversionTiming();
 
         var index = -1;
         for (var position = 0; position < Operations.Count; position++)
@@ -870,12 +931,77 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         FinalUnavailable = 0;
         FinalSkipped = 0;
         FinalNotSelected = 0;
+        _progressCompleted = 0;
+        _progressTotal = 0;
+        ProgressPercent = 0;
+        CurrentFile = string.Empty;
+        ElapsedTimeText = "Прошло: 00:00";
+        RemainingTimeText = "Осталось: рассчитываем…";
+        FinalDurationText = string.Empty;
         ResultFolder = string.Empty;
         OnPropertyChanged(nameof(HasRules));
         OnPropertyChanged(nameof(HasPreview));
         OnPropertyChanged(nameof(HasEngineUnavailable));
         OnPropertyChanged(nameof(HasErrors));
         OnPropertyChanged(nameof(VisibleOperations));
+        OnPropertyChanged(nameof(ProgressCountText));
+    }
+
+    private void RefreshConversionTiming()
+    {
+        if (!IsConverting)
+        {
+            return;
+        }
+
+        var elapsed = GetConversionElapsed();
+        ElapsedTimeText = $"Прошло: {FormatDuration(elapsed)}";
+        if (_progressTotal <= 0 || _progressCompleted <= 0)
+        {
+            RemainingTimeText = "Осталось: рассчитываем…";
+            return;
+        }
+
+        if (_progressCompleted >= _progressTotal)
+        {
+            RemainingTimeText = "Осталось: 00:00";
+            return;
+        }
+
+        var remaining = TimeSpan.FromTicks((long)Math.Max(
+            0,
+            elapsed.Ticks * (double)(_progressTotal - _progressCompleted)
+            / _progressCompleted));
+        RemainingTimeText = $"Осталось: ~{FormatDuration(remaining)}";
+    }
+
+    private TimeSpan GetConversionElapsed() =>
+        _timeProvider.GetElapsedTime(_conversionStartTimestamp, _timeProvider.GetTimestamp());
+
+    private static string FormatDuration(TimeSpan duration)
+    {
+        var totalHours = (int)Math.Floor(Math.Max(0, duration.TotalHours));
+        return totalHours > 0
+            ? $"{totalHours:00}:{duration.Minutes:00}:{duration.Seconds:00}"
+            : $"{duration.Minutes:00}:{duration.Seconds:00}";
+    }
+
+    private static string FormatConversionError(ConversionResult result)
+    {
+        var details = new List<string>();
+        if (!string.IsNullOrWhiteSpace(result.Diagnostic?.ErrorCode))
+        {
+            details.Add($"код: {result.Diagnostic.ErrorCode}");
+        }
+        if (result.Diagnostic?.HResult is int hResult)
+        {
+            details.Add($"HRESULT 0x{unchecked((uint)hResult):X8}");
+        }
+
+        var diagnostic = details.Count == 0
+            ? string.Empty
+            : $" ({string.Join(", ", details)})";
+        return $"{result.Operation.RelativePath}: {result.Message}{diagnostic}";
     }
 
     private void NotifyAvailability()

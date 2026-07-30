@@ -89,6 +89,34 @@ public sealed class MicrosoftOfficeConversionAdapterTests : IDisposable
             result.Message);
     }
 
+    [Fact]
+    public async Task Powerpoint_com_start_failure_explains_how_to_recover()
+    {
+        var sourcePath = Path.Combine(_rootPath, "legacy.ppt");
+        await File.WriteAllTextAsync(sourcePath, "legacy fixture");
+        var adapter = new MicrosoftOfficeConversionAdapter(
+            OfficeApplicationKind.PowerPoint,
+            new MicrosoftOfficeCapabilityTests.FakeCapabilityDetector(
+                [OfficeApplicationKind.PowerPoint]),
+            new ErrorWorkerRunner(
+                "office_com_failure",
+                hResult: unchecked((int)0x80080005)),
+            new OutputResultValidator());
+        var operation = CreateOperation(
+            sourcePath,
+            SourceFormat.Ppt,
+            ConversionTarget.Pptx);
+
+        var result = await adapter.ConvertAsync(operation, CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Failed, result.Status);
+        Assert.Equal("office_com_failure", result.Diagnostic?.ErrorCode);
+        Assert.Equal(unchecked((int)0x80080005), result.Diagnostic?.HResult);
+        Assert.Contains("PowerPoint не запустился", result.Message);
+        Assert.Contains("Откройте PowerPoint вручную", result.Message);
+        Assert.Contains("HRESULT 0x80080005", result.Message);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_rootPath))
@@ -159,7 +187,7 @@ public sealed class MicrosoftOfficeConversionAdapterTests : IDisposable
         }
     }
 
-    private sealed class ErrorWorkerRunner(string errorCode)
+    private sealed class ErrorWorkerRunner(string errorCode, int? hResult = null)
         : IMicrosoftOfficeWorkerRunner
     {
         public bool IsAvailable => true;
@@ -167,6 +195,9 @@ public sealed class MicrosoftOfficeConversionAdapterTests : IDisposable
         public Task<OfficeWorkerExecutionResult> RunAsync(
             OfficeWorkerRequest request,
             CancellationToken cancellationToken) =>
-            Task.FromResult(new OfficeWorkerExecutionResult(false, errorCode));
+            Task.FromResult(new OfficeWorkerExecutionResult(
+                false,
+                errorCode,
+                HResult: hResult));
     }
 }

@@ -153,7 +153,7 @@ internal sealed class ComOfficeAutomationSession(
             {
                 OfficeApplicationKind.Word => 0,
                 OfficeApplicationKind.Excel => Convert.ToInt64(value.Hwnd),
-                OfficeApplicationKind.PowerPoint => Convert.ToInt64(value.HWND),
+                OfficeApplicationKind.PowerPoint => 0,
                 _ => 0
             };
         }
@@ -177,7 +177,6 @@ internal sealed class ComOfficeAutomationSession(
                 value.EnableEvents = false;
                 break;
             case OfficeApplicationKind.PowerPoint:
-                value.Visible = 0;
                 value.DisplayAlerts = 1;
                 value.AutomationSecurity = AutomationSecurityForceDisable;
                 break;
@@ -280,7 +279,7 @@ internal sealed class ComOfficeAutomationSession(
         presentation.SaveAs(
             FileName: request.OutputPath,
             FileFormat: 24,
-            EmbedFonts: 0);
+            EmbedTrueTypeFonts: 0);
     }
 
     private void TryCloseDocument()

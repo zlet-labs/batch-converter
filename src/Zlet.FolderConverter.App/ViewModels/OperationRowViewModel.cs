@@ -96,8 +96,7 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         OperationStatus.Succeeded when target == ConversionTarget.Copy => "Скопировано",
         OperationStatus.Succeeded => "Преобразовано",
         OperationStatus.Conflict => "Файл результата уже существует",
-        OperationStatus.Failed when errorCode == "powerpoint_already_running"
-                                    && !string.IsNullOrWhiteSpace(message) => message,
+        OperationStatus.Failed when !string.IsNullOrWhiteSpace(message) => message,
         OperationStatus.Failed => "Ошибка",
         OperationStatus.EngineUnavailable when !string.IsNullOrWhiteSpace(message) => message,
         OperationStatus.EngineUnavailable => "Требуется Microsoft Office",

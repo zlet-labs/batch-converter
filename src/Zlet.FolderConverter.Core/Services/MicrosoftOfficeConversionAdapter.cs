@@ -85,13 +85,32 @@ public sealed class MicrosoftOfficeConversionAdapter : IConversionAdapter
             cancellationToken);
     }
 
-    private static string ToUserMessage(OfficeWorkerExecutionResult result) =>
+    private string ToUserMessage(OfficeWorkerExecutionResult result) =>
         result.ErrorCode switch
         {
             "powerpoint_already_running" =>
                 "PowerPoint уже запущен. Закройте его и повторите преобразование.",
+            "office_com_failure" when result.HResult == unchecked((int)0x80080005) =>
+                $"{_application.ToDisplayName()} не запустился через Windows. "
+                + $"Откройте {ShortDisplayName()} вручную, устраните ошибку запуска, "
+                + "закройте приложение и повторите. (HRESULT 0x80080005)",
+            "office_com_failure" =>
+                $"{_application.ToDisplayName()} вернул ошибку при открытии или сохранении файла"
+                + FormatHResult(result.HResult) + ".",
             _ when result.TimedOut =>
                 "Преобразование превысило допустимое время.",
             _ => "Не удалось преобразовать файл в Microsoft Office."
         };
+
+    private static string FormatHResult(int? hResult) => hResult is int value
+        ? $" (HRESULT 0x{unchecked((uint)value):X8})"
+        : string.Empty;
+
+    private string ShortDisplayName() => _application switch
+    {
+        OfficeApplicationKind.Word => "Word",
+        OfficeApplicationKind.Excel => "Excel",
+        OfficeApplicationKind.PowerPoint => "PowerPoint",
+        _ => _application.ToDisplayName()
+    };
 }

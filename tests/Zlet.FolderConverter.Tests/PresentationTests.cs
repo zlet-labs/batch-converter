@@ -61,6 +61,35 @@ public sealed class PresentationTests : IDisposable
     }
 
     [Fact]
+    public void OperationRowViewModel_shows_any_file_failure_message_inline()
+    {
+        const string message =
+            "PowerPoint не запустился. Откройте PowerPoint вручную и повторите.";
+        var operation = new PlannedOperation(
+            Path.Combine(_rootPath, "legacy.ppt"),
+            "legacy.ppt",
+            SourceFormat.Ppt,
+            ConversionTarget.Pptx,
+            ".pptx",
+            Path.Combine(_rootPath, "_converted", "legacy.pptx"),
+            true,
+            OperationStatus.Ready,
+            "Готово к преобразованию.",
+            Path.Combine(_rootPath, "_converted"),
+            _rootPath);
+        var result = new ConversionResult(
+            operation,
+            OperationStatus.Failed,
+            message,
+            new ConversionDiagnostic("office_com_failure"));
+
+        var row = new OperationRowViewModel(operation, result);
+
+        Assert.Equal(message, row.Status);
+        Assert.Equal(message, row.Message);
+    }
+
+    [Fact]
     public void OperationRowViewModel_shows_relative_paths_and_russian_action()
     {
         var relative = Path.Combine("архив договоров", "old file.doc");
@@ -286,6 +315,60 @@ public sealed class PresentationTests : IDisposable
             row.Operation.SourceFormat == SourceFormat.Json).Status);
         Assert.True(File.Exists(Path.Combine(_rootPath, "_converted", "users.txt")));
         Assert.Equal(source, File.ReadAllText(Path.Combine(_rootPath, "users.json")));
+    }
+
+    [Fact]
+    public async Task Conversion_exposes_percent_elapsed_eta_and_final_duration()
+    {
+        var operations = CreateStatusOperations(
+            [OperationStatus.Ready, OperationStatus.Ready]);
+        var clock = new ManualTimeProvider();
+        MainWindowViewModel? viewModel = null;
+        var processor = new TimedProgressProcessor(
+            clock,
+            () =>
+            {
+                Assert.NotNull(viewModel);
+                Assert.Equal(50, viewModel.ProgressPercent);
+                Assert.Equal("1 из 2", viewModel.ProgressCountText);
+                Assert.Equal("Прошло: 00:10", viewModel.ElapsedTimeText);
+                Assert.Equal("Осталось: ~00:10", viewModel.RemainingTimeText);
+                Assert.Equal("status-1.custom", viewModel.CurrentFile);
+            });
+        viewModel = CreateStatusViewModel(operations, processor, clock);
+
+        await viewModel.ScanAsync();
+        await viewModel.ConvertAsync();
+
+        Assert.Equal(100, viewModel.ProgressPercent);
+        Assert.Equal("2 из 2", viewModel.ProgressCountText);
+        Assert.Equal("Время выполнения: 00:14", viewModel.FinalDurationText);
+    }
+
+    [Fact]
+    public async Task Failed_conversion_exposes_file_message_code_and_hresult()
+    {
+        var operations = CreateStatusOperations([OperationStatus.Ready]);
+        var failed = new ConversionResult(
+            operations[0],
+            OperationStatus.Failed,
+            "PowerPoint не запустился.",
+            new ConversionDiagnostic(
+                "office_com_failure",
+                HResult: unchecked((int)0x80080005)));
+        var summary = new ConversionSummary(0, 0, 1, 0, 0, 0, [failed]);
+        var viewModel = CreateStatusViewModel(
+            operations,
+            new StaticProcessor(summary));
+
+        await viewModel.ScanAsync();
+        await viewModel.ConvertAsync();
+
+        var error = Assert.Single(viewModel.ErrorMessages);
+        Assert.Contains("status-0.custom", error);
+        Assert.Contains("PowerPoint не запустился.", error);
+        Assert.Contains("office_com_failure", error);
+        Assert.Contains("HRESULT 0x80080005", error);
     }
 
     [Fact]
@@ -670,7 +753,8 @@ public sealed class PresentationTests : IDisposable
 
     private MainWindowViewModel CreateStatusViewModel(
         PlannedOperation[] operations,
-        IConversionProcessor? processor = null)
+        IConversionProcessor? processor = null,
+        TimeProvider? timeProvider = null)
     {
         var scan = new ScanResult(
             _rootPath,
@@ -683,7 +767,8 @@ public sealed class PresentationTests : IDisposable
         return new MainWindowViewModel(
             new StaticScanner(scan),
             new StaticPlanner(operations),
-            processor)
+            processor,
+            timeProvider: timeProvider)
         {
             SelectedFolder = _rootPath
         };
@@ -793,6 +878,62 @@ public sealed class PresentationTests : IDisposable
             IProgress<ConversionProgress>? progress,
             CancellationToken cancellationToken) =>
             Task.FromResult(summary);
+    }
+
+    private sealed class TimedProgressProcessor(
+        ManualTimeProvider clock,
+        Action halfway) : IConversionProcessor
+    {
+        public Task<ConversionSummary> ProcessAsync(
+            IReadOnlyList<PlannedOperation> operations,
+            IProgress<ConversionProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            var first = new ConversionResult(
+                operations[0],
+                OperationStatus.Succeeded,
+                "ok");
+            var second = new ConversionResult(
+                operations[1],
+                OperationStatus.Succeeded,
+                "ok");
+            progress?.Report(new ConversionProgress(
+                0,
+                2,
+                operations[0].RelativePath,
+                OperationStatus.Converting));
+            clock.Advance(TimeSpan.FromSeconds(10));
+            progress?.Report(new ConversionProgress(
+                1,
+                2,
+                operations[0].RelativePath,
+                OperationStatus.Succeeded,
+                first));
+            progress?.Report(new ConversionProgress(
+                1,
+                2,
+                operations[1].RelativePath,
+                OperationStatus.Converting));
+            halfway();
+            clock.Advance(TimeSpan.FromSeconds(4));
+            progress?.Report(new ConversionProgress(
+                2,
+                2,
+                operations[1].RelativePath,
+                OperationStatus.Succeeded,
+                second));
+            return Task.FromResult(new ConversionSummary(2, 0, 0, 0, 0, 0, [first, second]));
+        }
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long _timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => _timestamp;
+
+        public void Advance(TimeSpan value) => _timestamp += value.Ticks;
     }
 
     private sealed class RecordingProcessor : IConversionProcessor

@@ -12,6 +12,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <AssemblyName>$(ZletExecutableName)</AssemblyName>
+    <ApplicationIcon>Assets\ZletBatchConverter.ico</ApplicationIcon>
     <RootNamespace>Zlet.FolderConverter.App</RootNamespace>
     <RuntimeIdentifier>$(ZletPortableRuntimeIdentifier)</RuntimeIdentifier>
     <UseWindowsForms>true</UseWindowsForms>
@@ -19,6 +20,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\ZletBatchConverter.ico" />
+  </ItemGroup>
 
   <Target Name="CopyOfficeWorkerToOutput"
           AfterTargets="Build"

@@ -54,6 +54,41 @@ public sealed class ProductMetadataTests
         Assert.DoesNotContain("Zlet Folder Converter", readme);
     }
 
+    [Fact]
+    public void Main_window_renders_progress_timing_and_file_specific_errors()
+    {
+        var root = FindRepositoryRoot();
+        var mainWindow = File.ReadAllText(Path.Combine(
+            root,
+            "src",
+            "Zlet.FolderConverter.App",
+            "MainWindow.xaml"));
+
+        Assert.Contains("{Binding ProgressPercentText}", mainWindow);
+        Assert.Contains("{Binding ProgressCountText}", mainWindow);
+        Assert.Contains("{Binding ElapsedTimeText}", mainWindow);
+        Assert.Contains("{Binding RemainingTimeText}", mainWindow);
+        Assert.Contains("{Binding FinalDurationText}", mainWindow);
+        Assert.Contains("ItemsSource=\"{Binding ErrorMessages}\"", mainWindow);
+    }
+
+    [Fact]
+    public void App_uses_one_product_icon_for_executable_window_and_taskbar()
+    {
+        var root = FindRepositoryRoot();
+        var appDirectory = Path.Combine(root, "src", "Zlet.FolderConverter.App");
+        var project = File.ReadAllText(Path.Combine(
+            appDirectory,
+            "Zlet.FolderConverter.App.csproj"));
+        var mainWindow = File.ReadAllText(Path.Combine(appDirectory, "MainWindow.xaml"));
+        var iconPath = Path.Combine(appDirectory, "Assets", "ZletBatchConverter.ico");
+
+        Assert.Contains("<ApplicationIcon>Assets\\ZletBatchConverter.ico</ApplicationIcon>", project);
+        Assert.Contains("Icon=\"Assets/ZletBatchConverter.ico\"", mainWindow);
+        Assert.True(File.Exists(iconPath));
+        Assert.True(new FileInfo(iconPath).Length > 1_000);
+    }
+
     private static string FindRepositoryRoot()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);

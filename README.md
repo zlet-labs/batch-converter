@@ -2,7 +2,7 @@
 
 Zlet Batch Converter is a local Windows desktop prototype for processing files
 in a folder while preserving relative subfolder paths. Files are not uploaded.
-Repository: https://github.com/zlet-labs/folder-converter
+Repository: https://github.com/zlet-labs/batch-converter
 
 ## Supported operations
 

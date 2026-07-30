@@ -1,0 +1,41 @@
+namespace Zlet.FolderConverter.Core.Models;
+
+public enum SourceFormat
+{
+    Json,
+    Doc,
+    Xls,
+    Ppt,
+    Docx,
+    Xlsx,
+    Pptx,
+    Odt,
+    Ods,
+    Odp,
+    Pdf,
+    Image,
+    Archive,
+    Unknown
+}
+
+public static class SourceFormatExtensions
+{
+    public static string ToDisplayName(this SourceFormat format) => format switch
+    {
+        SourceFormat.Json => "JSON",
+        SourceFormat.Doc => "DOC",
+        SourceFormat.Xls => "XLS",
+        SourceFormat.Ppt => "PPT",
+        SourceFormat.Docx => "DOCX",
+        SourceFormat.Xlsx => "XLSX",
+        SourceFormat.Pptx => "PPTX",
+        SourceFormat.Odt => "ODT",
+        SourceFormat.Ods => "ODS",
+        SourceFormat.Odp => "ODP",
+        SourceFormat.Pdf => "PDF",
+        SourceFormat.Image => "Изображения",
+        SourceFormat.Archive => "Архивы",
+        SourceFormat.Unknown => "Другие",
+        _ => "Другие"
+    };
+}

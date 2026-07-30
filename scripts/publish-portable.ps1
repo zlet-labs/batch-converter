@@ -1,0 +1,189 @@
+$ErrorActionPreference = "Stop"
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$appProject = Join-Path $repoRoot "src\Zlet.FolderConverter.App\Zlet.FolderConverter.App.csproj"
+$workerProject = Join-Path $repoRoot "src\Zlet.FolderConverter.OfficeWorker\Zlet.FolderConverter.OfficeWorker.csproj"
+$readmePath = Join-Path $repoRoot "README_PORTABLE.txt"
+$licensePath = Join-Path $repoRoot "LICENSE"
+$noticesPath = Join-Path $repoRoot "THIRD_PARTY_NOTICES.md"
+$licensesDirectory = Join-Path $repoRoot "licenses"
+
+function Fail([string]$Message) {
+    Write-Error $Message
+    exit 1
+}
+
+function Get-ProjectProperty([string]$Name) {
+    $output = & dotnet msbuild $appProject -nologo "-getProperty:$Name"
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Unable to read MSBuild property '$Name'."
+    }
+
+    $value = $output | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_)
+    } | Select-Object -Last 1
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        Fail "MSBuild property '$Name' is empty."
+    }
+
+    return $value.Trim()
+}
+
+function Assert-SafeArtifactPath([string]$Path) {
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $expectedRoot = [System.IO.Path]::GetFullPath(
+        (Join-Path $repoRoot "artifacts\portable"))
+    if (-not $fullPath.StartsWith(
+        $expectedRoot + [System.IO.Path]::DirectorySeparatorChar,
+        [System.StringComparison]::OrdinalIgnoreCase)) {
+        Fail "Refusing to modify an unexpected artifact path."
+    }
+}
+
+function Publish-Project([string]$ProjectPath, [string]$Destination) {
+    & dotnet publish $ProjectPath `
+        -c Release `
+        -r $runtimeIdentifier `
+        --self-contained true `
+        --no-restore `
+        -p:PublishSingleFile=false `
+        -p:PublishTrimmed=false `
+        -p:DebugType=None `
+        -p:DebugSymbols=false `
+        -o $Destination
+    if ($LASTEXITCODE -ne 0) {
+        Fail "dotnet publish failed."
+    }
+}
+
+$runtimeIdentifier = Get-ProjectProperty "ZletPortableRuntimeIdentifier"
+$packageName = Get-ProjectProperty "ZletPortablePackageName"
+$executableName = Get-ProjectProperty "ZletExecutableName"
+$portableRoot = Join-Path $repoRoot "artifacts\portable\$runtimeIdentifier"
+$appFolder = Join-Path $portableRoot $packageName
+
+$sdks = & dotnet --list-sdks
+if ($LASTEXITCODE -ne 0 -or -not ($sdks -match "^8\.")) {
+    Fail ".NET 8 SDK is required to publish the portable package."
+}
+
+foreach ($requiredPath in @(
+    $appProject,
+    $workerProject,
+    $readmePath,
+    $licensePath,
+    $noticesPath,
+    $licensesDirectory
+)) {
+    if (-not (Test-Path -LiteralPath $requiredPath)) {
+        Fail "Required packaging input is missing."
+    }
+}
+
+Assert-SafeArtifactPath $portableRoot
+if (Test-Path -LiteralPath $portableRoot) {
+    Remove-Item -LiteralPath $portableRoot -Recurse -Force
+}
+New-Item -ItemType Directory -Force -Path $appFolder | Out-Null
+
+Publish-Project $appProject $appFolder
+Publish-Project $workerProject $appFolder
+
+Copy-Item -LiteralPath $readmePath `
+    -Destination (Join-Path $appFolder "README_PORTABLE.txt") -Force
+Copy-Item -LiteralPath $licensePath `
+    -Destination (Join-Path $appFolder "LICENSE.txt") -Force
+Copy-Item -LiteralPath $noticesPath `
+    -Destination (Join-Path $appFolder "THIRD_PARTY_NOTICES.md") -Force
+$packagedLicenses = Join-Path $appFolder "licenses"
+New-Item -ItemType Directory -Force -Path $packagedLicenses | Out-Null
+Copy-Item -Path (Join-Path $licensesDirectory "*") `
+    -Destination $packagedLicenses -Recurse -Force
+
+$requiredOutputs = @(
+    (Join-Path $appFolder "$executableName.exe"),
+    (Join-Path $appFolder "Zlet.FolderConverter.OfficeWorker.exe"),
+    (Join-Path $appFolder "README_PORTABLE.txt"),
+    (Join-Path $appFolder "LICENSE.txt"),
+    (Join-Path $appFolder "THIRD_PARTY_NOTICES.md")
+)
+foreach ($requiredOutput in $requiredOutputs) {
+    if (-not (Test-Path -LiteralPath $requiredOutput -PathType Leaf)) {
+        Fail "Portable package validation failed: a required output is missing."
+    }
+}
+
+$forbiddenDirectories = Get-ChildItem -LiteralPath $appFolder -Recurse -Directory |
+    Where-Object {
+        $_.Name -in @(
+            "bin",
+            "obj",
+            "fixtures",
+            "test-fixtures",
+            "tests",
+            "python",
+            "java"
+        )
+    }
+if ($forbiddenDirectories) {
+    Fail "Portable package validation failed: a forbidden directory is present."
+}
+
+$forbiddenFiles = Get-ChildItem -LiteralPath $appFolder -Recurse -File |
+    Where-Object {
+        $_.Extension -in @(
+            ".cs",
+            ".csproj",
+            ".sln",
+            ".pdb",
+            ".pfx",
+            ".pem",
+            ".key"
+        ) -or
+        $_.Name -match "\.(user|suo)$" -or
+        $_.Name -match "^(python|java)(\.|$)" -or
+        $_.Name -match "\.local\.json$"
+    }
+if ($forbiddenFiles) {
+    Fail "Portable package validation failed: source, test, local, or secret-bearing files are present."
+}
+
+$ownedTextFiles = @(
+    (Join-Path $appFolder "README_PORTABLE.txt"),
+    (Join-Path $appFolder "THIRD_PARTY_NOTICES.md"),
+    (Join-Path $appFolder "licenses\README.md")
+)
+foreach ($textFile in $ownedTextFiles) {
+    if (Test-Path -LiteralPath $textFile) {
+        $content = Get-Content -Raw -LiteralPath $textFile
+        if ($content.IndexOf(
+                $repoRoot,
+                [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            Fail "Portable package validation failed: a local absolute path was recorded."
+        }
+    }
+}
+
+$zipPath = Join-Path $portableRoot "$packageName.zip"
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    $appFolder,
+    $zipPath,
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $true
+)
+if (-not (Test-Path -LiteralPath $zipPath) -or
+    (Get-Item -LiteralPath $zipPath).Length -le 0) {
+    Fail "Portable ZIP was not created."
+}
+
+$unpackedBytes = (
+    Get-ChildItem -LiteralPath $appFolder -Recurse -File |
+    Measure-Object -Property Length -Sum
+).Sum
+$zipBytes = (Get-Item -LiteralPath $zipPath).Length
+
+Write-Output "Portable ZIP created:"
+Write-Output (Resolve-Path -LiteralPath $zipPath).Path
+Write-Output "Portable ZIP bytes: $zipBytes"
+Write-Output "Unpacked folder bytes: $unpackedBytes"

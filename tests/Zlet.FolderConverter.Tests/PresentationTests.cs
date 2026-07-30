@@ -582,7 +582,7 @@ public sealed class PresentationTests : IDisposable
         viewModel.OutputPath = manualFolder;
 
         viewModel.SelectedOutputMode = OutputMode.Zip;
-        Assert.EndsWith("ZletBatchConverter-v0.0.0-results.zip", viewModel.OutputPath);
+        Assert.EndsWith("ZletBatchConverter-v0.0.1-results.zip", viewModel.OutputPath);
         var manualZip = Path.Combine(_rootPath, "manual.zip");
         viewModel.OutputPath = manualZip;
 

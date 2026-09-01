@@ -414,30 +414,42 @@
                                 Background="#5520334D"
                                 BorderBrush="#36527A"
                                 BorderThickness="1">
-                            <Grid>
+                            <Grid VerticalAlignment="Center">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Office"
                                            Width="44"
-                                           Height="24"
                                            Margin="0,0,10,0"
                                            TextAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontSize="14"
+                                           LineHeight="20"
+                                           LineStackingStrategy="BlockLineHeight"
                                            FontWeight="Bold"
                                            Foreground="#70E4FF" />
                                 <WrapPanel Grid.Column="1"
                                            VerticalAlignment="Center">
                                     <TextBlock Text="{Binding WordOfficeStatus}"
                                                Margin="0,0,18,0"
+                                               VerticalAlignment="Center"
                                                FontSize="14"
+                                               LineHeight="20"
+                                               LineStackingStrategy="BlockLineHeight"
                                                FontWeight="SemiBold" />
                                     <TextBlock Text="{Binding ExcelOfficeStatus}"
                                                Margin="0,0,18,0"
+                                               VerticalAlignment="Center"
                                                FontSize="14"
+                                               LineHeight="20"
+                                               LineStackingStrategy="BlockLineHeight"
                                                FontWeight="SemiBold" />
                                     <TextBlock Text="{Binding PowerPointOfficeStatus}"
+                                               VerticalAlignment="Center"
                                                FontSize="14"
+                                               LineHeight="20"
+                                               LineStackingStrategy="BlockLineHeight"
                                                FontWeight="SemiBold" />
                                 </WrapPanel>
                             </Grid>

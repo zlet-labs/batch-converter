@@ -1,4 +1,4 @@
-# Zlet Batch Converter v0.0.1
+# Zlet Batch Converter v0.0.2
 
 Zlet Batch Converter — локальный Windows-прототип для пакетной обработки файлов
 с сохранением относительной структуры подпапок. Файлы никуда не отправляются.
@@ -77,7 +77,7 @@ dotnet test FolderConverter.sln -c Release --filter Category=OfficeIntegration
 
 Скрипт создаёт self-contained .NET 8 пакет Windows x64 и ZIP:
 
-`artifacts/portable/win-x64/ZletBatchConverter-v0.0.1-win-x64.zip`
+`artifacts/portable/win-x64/ZletBatchConverter-v0.0.2-win-x64.zip`
 
 В пакете нет Microsoft Office, Python, Java, исходников, тестов и локальных
 конфигов. GitHub Release до отдельного ревью и ручной проверки публиковать

@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Zlet.FolderConverter.App"
         mc:Ignorable="d"
-        Title="Zlet Batch Converter v0.0.1"
+        Title="Zlet Batch Converter v0.0.2"
         Icon="Assets/ZletBatchConverter.ico"
         Width="1280"
         Height="780"
@@ -60,12 +60,16 @@
                         <TextBlock Text="{x:Static local:ProductIdentity.Name}"
                                    FontSize="27"
                                    FontWeight="SemiBold" />
-                        <Border Margin="12,3,0,0"
-                                Padding="8,3"
+                        <Border Margin="12,0,0,0"
+                                Padding="8,4"
                                 CornerRadius="8"
                                 Background="#4338CA"
-                                VerticalAlignment="Top">
-                            <TextBlock FontSize="12" FontWeight="Bold">
+                                VerticalAlignment="Center">
+                            <TextBlock FontSize="12"
+                                       FontWeight="Bold"
+                                       VerticalAlignment="Center"
+                                       LineHeight="16"
+                                       LineStackingStrategy="BlockLineHeight">
                                 <Run Text="PRE-ALPHA · v" />
                                 <Run Text="{x:Static local:ProductIdentity.Version}" />
                             </TextBlock>

@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <ZletProductName>Zlet Batch Converter</ZletProductName>
-    <ZletProductVersion>0.0.1</ZletProductVersion>
+    <ZletProductVersion>0.0.2</ZletProductVersion>
     <ZletExecutableName>ZletBatchConverter</ZletExecutableName>
     <ZletPortableRuntimeIdentifier>win-x64</ZletPortableRuntimeIdentifier>
     <Version>$(ZletProductVersion)</Version>

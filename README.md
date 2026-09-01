@@ -1,4 +1,4 @@
-# Zlet Batch Converter v0.0.1
+# Zlet Batch Converter v0.0.2
 
 Zlet Batch Converter is a local Windows desktop prototype for processing files
 in a folder while preserving relative subfolder paths. Files are not uploaded.
@@ -80,7 +80,7 @@ fixture is absent.
 The script publishes Windows x64, self-contained .NET 8 application and worker
 files, then creates:
 
-`artifacts/portable/win-x64/ZletBatchConverter-v0.0.1-win-x64.zip`
+`artifacts/portable/win-x64/ZletBatchConverter-v0.0.2-win-x64.zip`
 
 The package contains neither Microsoft Office nor conversion runtimes such as
 Python or Java. Do not publish a GitHub Release before separate review and

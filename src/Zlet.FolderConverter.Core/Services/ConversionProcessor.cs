@@ -36,6 +36,7 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
                     operation.RelativePath,
                     OperationStatus.Converting,
                     OperationPercent: 10));
+                var operationPercent = 10;
 
                 ConversionResult result;
                 var adapter = adapterResolver.Resolve(operation.SourceFormat, operation.Target);
@@ -52,7 +53,24 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
                 {
                     try
                     {
-                        result = await adapter.ConvertAsync(operation, cancellationToken);
+                        var stageProgress = new InlineProgress<int>(percent =>
+                        {
+                            var next = Math.Clamp(percent, operationPercent, 99);
+                            if (next == operationPercent)
+                                return;
+
+                            operationPercent = next;
+                            progress?.Report(new ConversionProgress(
+                                completedReady,
+                                readyTotal,
+                                operation.RelativePath,
+                                OperationStatus.Converting,
+                                OperationPercent: operationPercent));
+                        });
+                        result = await adapter.ConvertAsync(
+                            operation,
+                            stageProgress,
+                            cancellationToken);
                     }
                     catch (OperationCanceledException)
                     {
@@ -65,7 +83,8 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
                             readyTotal,
                             operation.RelativePath,
                             OperationStatus.Cancelled,
-                            cancelled));
+                            cancelled,
+                            operationPercent));
                         throw;
                     }
                     catch
@@ -86,7 +105,7 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
                     operation.RelativePath,
                     result.Status,
                     result,
-                    result.Status == OperationStatus.Succeeded ? 100 : null));
+                    result.Status == OperationStatus.Succeeded ? 100 : operationPercent));
             }
         }
         finally
@@ -105,5 +124,10 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
             results.Count(result => result.Status == OperationStatus.EngineUnavailable),
             results.Count(result => result.Status == OperationStatus.Unsupported),
             results);
+    }
+
+    private sealed class InlineProgress<T>(Action<T> callback) : IProgress<T>
+    {
+        public void Report(T value) => callback(value);
     }
 }

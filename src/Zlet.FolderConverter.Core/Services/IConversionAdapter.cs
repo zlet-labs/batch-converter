@@ -13,4 +13,9 @@ public interface IConversionAdapter
     Task<ConversionResult> ConvertAsync(
         PlannedOperation operation,
         CancellationToken cancellationToken);
+
+    Task<ConversionResult> ConvertAsync(
+        PlannedOperation operation,
+        IProgress<int>? progress,
+        CancellationToken cancellationToken) => ConvertAsync(operation, cancellationToken);
 }

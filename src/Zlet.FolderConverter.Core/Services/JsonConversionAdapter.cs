@@ -26,6 +26,12 @@ public sealed class JsonConversionAdapter : IConversionAdapter
 
     public Task<ConversionResult> ConvertAsync(
         PlannedOperation operation,
+        CancellationToken cancellationToken) =>
+        ConvertAsync(operation, progress: null, cancellationToken);
+
+    public Task<ConversionResult> ConvertAsync(
+        PlannedOperation operation,
+        IProgress<int>? progress,
         CancellationToken cancellationToken)
     {
         return _executor.ExecuteAsync(
@@ -62,6 +68,7 @@ public sealed class JsonConversionAdapter : IConversionAdapter
                 }
             },
             "Преобразовано.",
+            progress,
             cancellationToken);
     }
 

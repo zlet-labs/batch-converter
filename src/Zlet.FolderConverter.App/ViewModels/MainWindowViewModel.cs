@@ -718,8 +718,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 }
             }
 
-            foreach (var result in summary.Results.Where(result => result.Status == OperationStatus.Failed))
-                AddError(FormatConversionError(result));
+            AddFailureErrorsFromRows();
 
             UpdatePreviewSummary();
             var unprocessedRows = originalRows.Where(row =>
@@ -730,7 +729,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             FinalCopied = summary.Results.Count(result =>
                 result.Status == OperationStatus.Succeeded
                 && result.Operation.Target == ConversionTarget.Copy);
-            FinalFailed = summary.Failed;
+            FinalFailed = Operations.Count(row => row.Operation.Status == OperationStatus.Failed);
             FinalConflicts = summary.Conflicts + unprocessedRows.Count(row =>
                 row.Operation.Status == OperationStatus.Conflict);
             FinalUnavailable = summary.EngineUnavailable + summary.Unsupported
@@ -779,6 +778,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         row.MarkNotProcessed();
                 }
 
+                AddFailureErrorsFromRows();
                 UpdateFinalCountersFromRows(selectedRows);
                 if (SelectedOutputMode == OutputMode.Zip && FinalSucceeded > 0)
                 {
@@ -879,6 +879,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public void AddError(string message)
     {
+        if (ErrorMessages.Contains(message, StringComparer.Ordinal))
+            return;
+
         ErrorMessages.Add(message);
         OnPropertyChanged(nameof(HasErrors));
     }
@@ -999,14 +1002,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _progressTotal = progress.Total;
         OnPropertyChanged(nameof(ProgressCountText));
         CurrentFile = progress.RelativePath;
-        ProgressPercent = progress.Total == 0
+        var reportedPercent = progress.Total == 0
             ? 0
             : Math.Clamp(
-                (progress.Completed + (progress.Status == OperationStatus.Converting
+                (progress.Completed + (progress.Status is OperationStatus.Converting
+                    or OperationStatus.Cancelled
                     ? (progress.OperationPercent ?? 0) / 100d
                     : 0)) * 100d / progress.Total,
                 0,
                 100);
+        ProgressPercent = Math.Max(ProgressPercent, reportedPercent);
         RefreshConversionTiming();
 
         var index = -1;
@@ -1186,6 +1191,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             ? string.Empty
             : $" ({string.Join(", ", details)})";
         return $"{result.Operation.RelativePath}: {result.Message}{diagnostic}";
+    }
+
+    private void AddFailureErrorsFromRows()
+    {
+        foreach (var result in Operations
+                     .Where(row => row.Operation.Status == OperationStatus.Failed)
+                     .Select(row => row.Result)
+                     .OfType<ConversionResult>()
+                     .Where(result => result.Status == OperationStatus.Failed))
+        {
+            AddError(FormatConversionError(result));
+        }
     }
 
     private void ResetFinalCounters()

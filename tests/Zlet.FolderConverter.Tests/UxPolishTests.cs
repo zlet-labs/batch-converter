@@ -88,6 +88,77 @@ public sealed class UxPolishTests : IDisposable
     }
 
     [Fact]
+    public async Task Previously_unselected_ready_row_can_be_selected_and_run_without_rescan()
+    {
+        var processor = new RecordingSuccessProcessor();
+        var viewModel = ViewModel(
+            [
+                Operation("first.doc", ConversionTarget.Docx),
+                Operation("second.doc", ConversionTarget.Docx)
+            ],
+            processor);
+        await viewModel.ScanAsync();
+        viewModel.Operations[1].IsSelected = false;
+
+        await viewModel.ConvertAsync();
+
+        var omitted = viewModel.Operations[1];
+        Assert.Equal("Не выбрано", omitted.Status);
+        Assert.True(omitted.CanSelect);
+        Assert.Equal("—", omitted.ExecutionTimeText);
+
+        viewModel.SelectAll();
+        Assert.True(omitted.IsSelected);
+        Assert.Equal("Готово к преобразованию", omitted.Status);
+        viewModel.ClearSelection();
+        Assert.False(omitted.IsSelected);
+        viewModel.InvertSelection();
+        Assert.True(omitted.IsSelected);
+
+        await viewModel.ConvertAsync();
+
+        Assert.Equal(OperationStatus.Succeeded, omitted.Operation.Status);
+        Assert.Equal(2, processor.Batches.Count);
+        Assert.Equal(["first.doc"], processor.Batches[0]);
+        Assert.Equal(["second.doc"], processor.Batches[1]);
+        Assert.Equal(1, viewModel.FinalConverted);
+    }
+
+    [Fact]
+    public async Task Failed_diagnostic_and_counter_survive_stop_and_remaining_rerun_once()
+    {
+        const int hResult = unchecked((int)0x80004005);
+        var processor = new FailedThenStopProcessor(hResult);
+        var viewModel = ViewModel(
+            [
+                Operation("failed.doc", ConversionTarget.Docx),
+                Operation("active.doc", ConversionTarget.Docx),
+                Operation("pending.doc", ConversionTarget.Docx)
+            ],
+            processor);
+        await viewModel.ScanAsync();
+
+        var firstRun = viewModel.ConvertAsync();
+        Assert.True(viewModel.StopConversion());
+        await firstRun;
+
+        Assert.Equal("Остановлено пользователем", viewModel.FinalReportTitle);
+        Assert.Equal(OperationStatus.Failed, viewModel.Operations[0].Operation.Status);
+        Assert.Equal(1, viewModel.FinalFailed);
+        var diagnostic = Assert.Single(viewModel.ErrorMessages);
+        Assert.Contains("failed.doc", diagnostic);
+        Assert.Contains("test_error", diagnostic);
+        Assert.Contains("HRESULT 0x80004005", diagnostic);
+
+        await viewModel.ConvertAsync();
+
+        Assert.Equal(OperationStatus.Failed, viewModel.Operations[0].Operation.Status);
+        Assert.Equal(1, viewModel.FinalFailed);
+        Assert.Single(viewModel.ErrorMessages);
+        Assert.Equal(2, processor.RunCount);
+    }
+
+    [Fact]
     public async Task Final_counters_separate_conversion_copy_and_non_success_states()
     {
         var convert = Operation("convert.doc", ConversionTarget.Docx);
@@ -125,9 +196,11 @@ public sealed class UxPolishTests : IDisposable
         var row = new OperationRowViewModel(operation);
 
         row.BeginExecution(clock.GetTimestamp(), 10);
+        row.BeginExecution(clock.GetTimestamp(), 55);
+        row.BeginExecution(clock.GetTimestamp(), 25);
         clock.Advance(TimeSpan.FromSeconds(3.2));
         row.RefreshExecutionTime(clock, clock.GetTimestamp());
-        Assert.Equal("В процессе · 10%", row.Status);
+        Assert.Equal("В процессе · 55%", row.Status);
         Assert.Equal("3,2 с", row.ExecutionTimeText);
 
         row.CompleteExecution(
@@ -330,6 +403,62 @@ public sealed class UxPolishTests : IDisposable
             }
             return Task.FromResult(new ConversionSummary(
                 results.Count, 0, 0, 0, 0, 0, results));
+        }
+    }
+
+    private sealed class RecordingSuccessProcessor : IConversionProcessor
+    {
+        public List<string[]> Batches { get; } = [];
+
+        public Task<ConversionSummary> ProcessAsync(
+            IReadOnlyList<PlannedOperation> operations,
+            IProgress<ConversionProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            Batches.Add(operations.Select(operation => operation.RelativePath).ToArray());
+            var results = operations.Select(operation =>
+                new ConversionResult(operation, OperationStatus.Succeeded, "ok")).ToArray();
+            return Task.FromResult(new ConversionSummary(
+                results.Length, 0, 0, 0, 0, 0, results));
+        }
+    }
+
+    private sealed class FailedThenStopProcessor(int hResult) : IConversionProcessor
+    {
+        public int RunCount { get; private set; }
+
+        public Task<ConversionSummary> ProcessAsync(
+            IReadOnlyList<PlannedOperation> operations,
+            IProgress<ConversionProgress>? progress,
+            CancellationToken cancellationToken)
+        {
+            RunCount++;
+            if (RunCount == 1)
+            {
+                progress?.Report(new ConversionProgress(
+                    0, operations.Count, operations[0].RelativePath,
+                    OperationStatus.Converting, OperationPercent: 25));
+                var failed = new ConversionResult(
+                    operations[0],
+                    OperationStatus.Failed,
+                    "diagnostic failure",
+                    new ConversionDiagnostic("test_error", HResult: hResult));
+                progress?.Report(new ConversionProgress(
+                    1, operations.Count, operations[0].RelativePath,
+                    OperationStatus.Failed, failed, 55));
+                progress?.Report(new ConversionProgress(
+                    1, operations.Count, operations[1].RelativePath,
+                    OperationStatus.Converting, OperationPercent: 25));
+                var completion = new TaskCompletionSource<ConversionSummary>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                cancellationToken.Register(() => completion.TrySetCanceled(cancellationToken));
+                return completion.Task;
+            }
+
+            var results = operations.Select(operation =>
+                new ConversionResult(operation, OperationStatus.Succeeded, "ok")).ToArray();
+            return Task.FromResult(new ConversionSummary(
+                results.Length, 0, 0, 0, 0, 0, results));
         }
     }
 

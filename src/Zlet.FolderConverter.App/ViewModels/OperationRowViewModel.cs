@@ -28,13 +28,15 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
             : result.Operation with { Status = result.Status, Message = result.Message };
         _isSelected = Operation.Status == OperationStatus.Ready && (isSelected ?? true);
         _isNotSelected = isNotSelected;
+        Result = result;
         _selectionChanged = selectionChanged;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public PlannedOperation Operation { get; private set; }
+    public ConversionResult? Result { get; private set; }
     public bool CanSelect => (Operation.Status is OperationStatus.Ready
-        or OperationStatus.Cancelled or OperationStatus.NotProcessed) && !_isNotSelected;
+        or OperationStatus.Cancelled or OperationStatus.NotProcessed);
 
     public bool IsSelected
     {
@@ -42,9 +44,22 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         set
         {
             var next = CanSelect && value;
-            if (_isSelected == next) return;
+            var clearPreviousBatchState = next && _isNotSelected;
+            if (_isSelected == next && !clearPreviousBatchState) return;
             _isSelected = next;
+            if (clearPreviousBatchState)
+            {
+                _isNotSelected = false;
+                _operationPercent = null;
+                _executionStartTimestamp = null;
+                _executionElapsed = null;
+                _liveExecutionElapsed = null;
+                Result = null;
+            }
             OnPropertyChanged();
+            OnPropertyChanged(nameof(Status));
+            OnPropertyChanged(nameof(StatusTone));
+            OnPropertyChanged(nameof(ExecutionTimeText));
             _selectionChanged?.Invoke();
         }
     }
@@ -94,8 +109,12 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
             _executionStartTimestamp = timestamp;
             _executionElapsed = null;
             _liveExecutionElapsed = null;
+            Result = null;
         }
-        _operationPercent = Math.Clamp(percent, 0, 99);
+        var nextPercent = Math.Clamp(percent, 0, 99);
+        _operationPercent = _operationPercent.HasValue
+            ? Math.Max(_operationPercent.Value, nextPercent)
+            : nextPercent;
         _isSelected = false;
         _isNotSelected = false;
         Operation = Operation with { Status = OperationStatus.Converting, Message = "Выполняется операция." };
@@ -106,6 +125,7 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
     {
         FreezeExecutionTime(timeProvider, timestamp);
         _operationPercent = result.Status == OperationStatus.Succeeded ? 100 : null;
+        Result = result;
         Operation = result.Operation with { Status = result.Status, Message = result.Message };
         _isSelected = result.Status == OperationStatus.Cancelled;
         _isNotSelected = false;
@@ -116,6 +136,10 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
     {
         FreezeExecutionTime(timeProvider, timestamp);
         _operationPercent = null;
+        Result = new ConversionResult(
+            Operation,
+            OperationStatus.Cancelled,
+            "Отменено пользователем.");
         Operation = Operation with { Status = OperationStatus.Cancelled, Message = "Отменено пользователем." };
         _isSelected = true;
         NotifyExecutionChanged();
@@ -127,6 +151,7 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         _executionStartTimestamp = null;
         _executionElapsed = null;
         _liveExecutionElapsed = null;
+        Result = null;
         Operation = Operation with { Status = OperationStatus.NotProcessed, Message = "Не обработано." };
         _isSelected = true;
         NotifyExecutionChanged();
@@ -140,6 +165,7 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         _executionStartTimestamp = null;
         _executionElapsed = null;
         _liveExecutionElapsed = null;
+        Result = null;
         NotifyExecutionChanged();
     }
 

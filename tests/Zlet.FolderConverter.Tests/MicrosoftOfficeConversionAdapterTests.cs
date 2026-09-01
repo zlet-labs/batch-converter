@@ -117,6 +117,31 @@ public sealed class MicrosoftOfficeConversionAdapterTests : IDisposable
         Assert.Contains("HRESULT 0x80080005", result.Message);
     }
 
+    [Fact]
+    public async Task Worker_failure_removes_partial_temporary_output_and_preserves_source()
+    {
+        var sourcePath = Path.Combine(_rootPath, "partial.doc");
+        await File.WriteAllTextAsync(sourcePath, "legacy fixture");
+        var sourceHash = Hash(sourcePath);
+        var temporaryRoot = Path.Combine(_rootPath, "temporary-partial");
+        var adapter = new MicrosoftOfficeConversionAdapter(
+            OfficeApplicationKind.Word,
+            new MicrosoftOfficeCapabilityTests.FakeCapabilityDetector(
+                [OfficeApplicationKind.Word]),
+            new PartialOutputErrorWorkerRunner(),
+            new OutputResultValidator(),
+            temporaryRoot);
+        var operation = CreateOperation(sourcePath);
+
+        var result = await adapter.ConvertAsync(operation, CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Failed, result.Status);
+        Assert.False(File.Exists(operation.TargetPath));
+        Assert.Equal(sourceHash, Hash(sourcePath));
+        Assert.True(!Directory.Exists(temporaryRoot)
+                    || !Directory.EnumerateFileSystemEntries(temporaryRoot).Any());
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_rootPath))
@@ -199,5 +224,21 @@ public sealed class MicrosoftOfficeConversionAdapterTests : IDisposable
                 false,
                 errorCode,
                 HResult: hResult));
+    }
+
+    private sealed class PartialOutputErrorWorkerRunner : IMicrosoftOfficeWorkerRunner
+    {
+        public bool IsAvailable => true;
+
+        public async Task<OfficeWorkerExecutionResult> RunAsync(
+            OfficeWorkerRequest request,
+            CancellationToken cancellationToken)
+        {
+            await File.WriteAllTextAsync(
+                request.OutputPath,
+                "partial",
+                cancellationToken);
+            return new OfficeWorkerExecutionResult(false, "office_com_failure");
+        }
     }
 }

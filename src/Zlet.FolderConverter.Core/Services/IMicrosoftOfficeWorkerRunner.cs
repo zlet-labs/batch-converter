@@ -9,6 +9,11 @@ public interface IMicrosoftOfficeWorkerRunner
     Task<OfficeWorkerExecutionResult> RunAsync(
         OfficeWorkerRequest request,
         CancellationToken cancellationToken);
+
+    Task BeginBatchAsync(CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
+    Task EndBatchAsync() => Task.CompletedTask;
 }
 
 public sealed record OfficeWorkerExecutionResult(
@@ -18,4 +23,5 @@ public sealed record OfficeWorkerExecutionResult(
     bool TimedOut = false,
     bool HasStandardOutput = false,
     bool HasStandardError = false,
-    int? HResult = null);
+    int? HResult = null,
+    bool SessionInvalid = false);

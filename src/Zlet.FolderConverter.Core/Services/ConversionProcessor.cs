@@ -12,61 +12,77 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
         var results = new List<ConversionResult>(operations.Count);
         var readyTotal = operations.Count(operation => operation.Status == OperationStatus.Ready);
         var completedReady = 0;
+        var batchLifecycle = adapterResolver as IConversionBatchLifecycle;
 
-        foreach (var operation in operations)
+        if (batchLifecycle is not null)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (operation.Status != OperationStatus.Ready)
-            {
-                results.Add(new ConversionResult(operation, operation.Status, operation.Message));
-                continue;
-            }
+            await batchLifecycle.BeginBatchAsync(cancellationToken);
+        }
 
-            progress?.Report(new ConversionProgress(
-                completedReady,
-                readyTotal,
-                operation.RelativePath,
-                OperationStatus.Converting));
+        try
+        {
+            foreach (var operation in operations)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (operation.Status != OperationStatus.Ready)
+                {
+                    results.Add(new ConversionResult(operation, operation.Status, operation.Message));
+                    continue;
+                }
 
-            ConversionResult result;
-            var adapter = adapterResolver.Resolve(operation.SourceFormat, operation.Target);
-            if (adapter?.IsAvailable != true)
-            {
-                result = new ConversionResult(
-                    operation,
-                    adapter is null
-                        ? OperationStatus.Unsupported
-                        : OperationStatus.EngineUnavailable,
-                    adapter?.AvailabilityMessage ?? "Преобразование недоступно.");
-            }
-            else
-            {
-                try
-                {
-                    result = await adapter.ConvertAsync(operation, cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch
+                progress?.Report(new ConversionProgress(
+                    completedReady,
+                    readyTotal,
+                    operation.RelativePath,
+                    OperationStatus.Converting));
+
+                ConversionResult result;
+                var adapter = adapterResolver.Resolve(operation.SourceFormat, operation.Target);
+                if (adapter?.IsAvailable != true)
                 {
                     result = new ConversionResult(
                         operation,
-                        OperationStatus.Failed,
-                        "Не удалось обработать файл.",
-                        new ConversionDiagnostic("unexpected_adapter_failure"));
+                        adapter is null
+                            ? OperationStatus.Unsupported
+                            : OperationStatus.EngineUnavailable,
+                        adapter?.AvailabilityMessage ?? "Преобразование недоступно.");
                 }
-            }
+                else
+                {
+                    try
+                    {
+                        result = await adapter.ConvertAsync(operation, cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        result = new ConversionResult(
+                            operation,
+                            OperationStatus.Failed,
+                            "Не удалось обработать файл.",
+                            new ConversionDiagnostic("unexpected_adapter_failure"));
+                    }
+                }
 
-            results.Add(result);
-            completedReady++;
-            progress?.Report(new ConversionProgress(
-                completedReady,
-                readyTotal,
-                operation.RelativePath,
-                result.Status,
-                result));
+                results.Add(result);
+                completedReady++;
+                progress?.Report(new ConversionProgress(
+                    completedReady,
+                    readyTotal,
+                    operation.RelativePath,
+                    result.Status,
+                    result));
+            }
+        }
+        finally
+        {
+            if (batchLifecycle is not null)
+            {
+                await batchLifecycle.EndBatchAsync();
+            }
         }
 
         return new ConversionSummary(

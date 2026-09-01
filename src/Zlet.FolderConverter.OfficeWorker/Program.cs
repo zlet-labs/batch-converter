@@ -11,64 +11,71 @@ internal static class Program
     [STAThread]
     private static int Main()
     {
-        OfficeWorkerMessage result;
+        using var automation = new ComOfficeAutomation();
+        var dispatcher = new OfficeConversionDispatcher(automation);
         try
         {
-            var input = Console.In.ReadLine();
-            if (string.IsNullOrWhiteSpace(input))
+            while (Console.In.ReadLine() is { } input)
             {
-                return WriteResult(new OfficeWorkerMessage(
-                    OfficeWorkerMessageType.Result,
-                    false,
-                    "request_missing"));
+                OfficeWorkerMessage result;
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(input))
+                    {
+                        result = Failure("request_missing");
+                    }
+                    else
+                    {
+                        var request = JsonSerializer.Deserialize<OfficeWorkerRequest>(input, JsonOptions);
+                        result = request is null || !OfficeRequestValidator.IsValid(request)
+                            ? Failure("request_invalid")
+                            : dispatcher.Convert(request, WriteMessage);
+                    }
+                }
+                catch (JsonException)
+                {
+                    result = Failure("request_invalid");
+                }
+                catch (COMException exception)
+                {
+                    result = Failure(
+                        "office_com_failure",
+                        exception.HResult,
+                        sessionInvalid: true);
+                }
+                catch (Exception exception)
+                {
+                    result = Failure(
+                        "worker_failure",
+                        exception.HResult,
+                        sessionInvalid: true);
+                }
+
+                WriteMessage(result);
             }
 
-            var request = JsonSerializer.Deserialize<OfficeWorkerRequest>(input, JsonOptions);
-            if (request is null || !OfficeRequestValidator.IsValid(request))
-            {
-                return WriteResult(new OfficeWorkerMessage(
-                    OfficeWorkerMessageType.Result,
-                    false,
-                    "request_invalid"));
-            }
-
-            var dispatcher = new OfficeConversionDispatcher(new ComOfficeAutomation());
-            result = dispatcher.Convert(
-                request,
-                message => WriteMessage(message));
-        }
-        catch (JsonException)
-        {
-            result = new OfficeWorkerMessage(
-                OfficeWorkerMessageType.Result,
-                false,
-                "request_invalid");
-        }
-        catch (COMException exception)
-        {
-            result = new OfficeWorkerMessage(
-                OfficeWorkerMessageType.Result,
-                false,
-                "office_com_failure",
-                HResult: exception.HResult);
+            return 0;
         }
         catch (Exception exception)
         {
-            result = new OfficeWorkerMessage(
-                OfficeWorkerMessageType.Result,
-                false,
+            WriteMessage(Failure(
                 "worker_failure",
-                HResult: exception.HResult);
+                exception.HResult,
+                sessionInvalid: true));
+            return 1;
         }
-
-        return WriteResult(result);
     }
 
-    private static int WriteResult(OfficeWorkerMessage message)
-    {
-        WriteMessage(message);
-        return message.Success ? 0 : 1;
-    }
+    private static OfficeWorkerMessage Failure(
+        string errorCode,
+        int? hResult = null,
+        bool sessionInvalid = false) =>
+        new(
+            OfficeWorkerMessageType.Result,
+            false,
+            errorCode,
+            HResult: hResult,
+            SessionInvalid: sessionInvalid);
 
     private static void WriteMessage(OfficeWorkerMessage message)
     {

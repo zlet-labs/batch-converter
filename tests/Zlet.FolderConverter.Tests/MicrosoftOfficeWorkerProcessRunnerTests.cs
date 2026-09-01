@@ -97,6 +97,100 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Batch_reuses_one_worker_for_multiple_sequential_requests()
+    {
+        var process = new ScriptedWorkerProcess(
+            StartedLine(new OfficeProcessOwnership(4242, 638900000000000000), owned: false),
+            ResultLine(success: true),
+            ResultLine(success: true));
+        var launcher = new SequenceLauncher(process);
+        var runner = CreateRunner(launcher, new RecordingOfficeTerminator());
+
+        await runner.BeginBatchAsync(CancellationToken.None);
+        var first = await runner.RunAsync(Request(OfficeApplicationKind.Word), CancellationToken.None);
+        var second = await runner.RunAsync(Request(OfficeApplicationKind.Word), CancellationToken.None);
+        await runner.EndBatchAsync();
+
+        Assert.True(first.Success);
+        Assert.True(second.Success);
+        Assert.Equal(1, launcher.StartCount);
+        Assert.Equal(2, process.RequestCount);
+        Assert.True(process.InputClosed);
+        Assert.False(process.KillCalled);
+    }
+
+    [Fact]
+    public async Task File_failure_does_not_discard_usable_session()
+    {
+        var process = new ScriptedWorkerProcess(
+            ResultLine(success: false, errorCode: "office_document_failure"),
+            ResultLine(success: true));
+        var launcher = new SequenceLauncher(process);
+        var runner = CreateRunner(launcher, new RecordingOfficeTerminator());
+
+        await runner.BeginBatchAsync(CancellationToken.None);
+        var first = await runner.RunAsync(Request(OfficeApplicationKind.Word), CancellationToken.None);
+        var second = await runner.RunAsync(Request(OfficeApplicationKind.Word), CancellationToken.None);
+        await runner.EndBatchAsync();
+
+        Assert.False(first.Success);
+        Assert.True(second.Success);
+        Assert.Equal(1, launcher.StartCount);
+        Assert.False(process.KillCalled);
+    }
+
+    [Fact]
+    public async Task Invalid_session_restarts_once_for_next_file_without_retry_loop()
+    {
+        var invalid = new ScriptedWorkerProcess(
+            ResultLine(
+                success: false,
+                errorCode: "office_com_failure",
+                sessionInvalid: true));
+        var recovered = new ScriptedWorkerProcess(ResultLine(success: true));
+        var launcher = new SequenceLauncher(invalid, recovered);
+        var runner = CreateRunner(launcher, new RecordingOfficeTerminator());
+
+        await runner.BeginBatchAsync(CancellationToken.None);
+        var first = await runner.RunAsync(Request(OfficeApplicationKind.Word), CancellationToken.None);
+
+        Assert.False(first.Success);
+        Assert.True(first.SessionInvalid);
+        Assert.Equal(1, launcher.StartCount);
+        Assert.True(invalid.KillCalled);
+
+        var second = await runner.RunAsync(Request(OfficeApplicationKind.Word), CancellationToken.None);
+        await runner.EndBatchAsync();
+
+        Assert.True(second.Success);
+        Assert.Equal(2, launcher.StartCount);
+        Assert.False(recovered.KillCalled);
+    }
+
+    [Fact]
+    public async Task Switching_office_application_closes_previous_session_before_starting_next()
+    {
+        var word = new ScriptedWorkerProcess(ResultLine(success: true));
+        var excel = new ScriptedWorkerProcess(ResultLine(success: true));
+        var launcher = new SequenceLauncher(word, excel);
+        var runner = CreateRunner(launcher, new RecordingOfficeTerminator());
+
+        await runner.BeginBatchAsync(CancellationToken.None);
+        var wordResult = await runner.RunAsync(
+            Request(OfficeApplicationKind.Word),
+            CancellationToken.None);
+        var excelResult = await runner.RunAsync(
+            Request(OfficeApplicationKind.Excel),
+            CancellationToken.None);
+        await runner.EndBatchAsync();
+
+        Assert.True(wordResult.Success);
+        Assert.True(excelResult.Success);
+        Assert.False(launcher.StartedWhilePreviousActive);
+        Assert.Equal(2, launcher.StartCount);
+    }
+
+    [Fact]
     public void Terminator_does_not_kill_unknown_pid()
     {
         var terminator = new OwnedOfficeProcessTerminator(
@@ -182,6 +276,20 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
             new FakeLauncher(process),
             terminator);
 
+    private MicrosoftOfficeWorkerProcessRunner CreateRunner(
+        IOfficeWorkerProcessLauncher launcher,
+        IOwnedOfficeProcessTerminator terminator,
+        TimeSpan? timeout = null) =>
+        new(
+            new MicrosoftOfficeWorkerOptions
+            {
+                WorkerExecutablePath = _workerPath,
+                Timeout = timeout ?? TimeSpan.FromSeconds(1),
+                ShutdownTimeout = TimeSpan.FromMilliseconds(250)
+            },
+            launcher,
+            terminator);
+
     private static OfficeWorkerRequest Request(OfficeApplicationKind application) =>
         new(
             application,
@@ -207,10 +315,90 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
                 OfficeProcessOwned: owned),
             JsonOptions);
 
+    private static string ResultLine(
+        bool success,
+        string errorCode = "",
+        bool sessionInvalid = false) =>
+        JsonSerializer.Serialize(
+            new OfficeWorkerMessage(
+                OfficeWorkerMessageType.Result,
+                success,
+                errorCode,
+                SessionInvalid: sessionInvalid),
+            JsonOptions);
+
     private sealed class FakeLauncher(IOfficeWorkerProcess process)
         : IOfficeWorkerProcessLauncher
     {
         public IOfficeWorkerProcess Start(string executablePath) => process;
+    }
+
+    private sealed class SequenceLauncher(params ScriptedWorkerProcess[] processes)
+        : IOfficeWorkerProcessLauncher
+    {
+        private int _index;
+        public int StartCount { get; private set; }
+        public bool StartedWhilePreviousActive { get; private set; }
+
+        public IOfficeWorkerProcess Start(string executablePath)
+        {
+            if (_index > 0 && processes[_index - 1].IsActive)
+            {
+                StartedWhilePreviousActive = true;
+            }
+
+            StartCount++;
+            return processes[_index++];
+        }
+    }
+
+    private sealed class ScriptedWorkerProcess : IOfficeWorkerProcess
+    {
+        private readonly TaskCompletionSource _exit =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TrackingWriter _input;
+
+        public ScriptedWorkerProcess(params string[] lines)
+        {
+            StandardOutput = new StringReader(string.Join(Environment.NewLine, lines));
+            _input = new TrackingWriter(() => _exit.TrySetResult());
+        }
+
+        public TextWriter StandardInput => _input;
+        public TextReader StandardOutput { get; }
+        public TextReader StandardError { get; } = new StringReader(string.Empty);
+        public int ExitCode => 0;
+        public bool KillCalled { get; private set; }
+        public bool InputClosed => _input.IsClosed;
+        public int RequestCount => _input.RequestCount;
+        public bool IsActive => !_exit.Task.IsCompleted;
+
+        public Task WaitForExitAsync(CancellationToken cancellationToken) => _exit.Task;
+
+        public void Kill()
+        {
+            KillCalled = true;
+            _exit.TrySetResult();
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class TrackingWriter(Action onClose) : StringWriter
+        {
+            public bool IsClosed { get; private set; }
+            public int RequestCount => ToString()
+                .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+                .Length;
+
+            public override void Close()
+            {
+                IsClosed = true;
+                onClose();
+                base.Close();
+            }
+        }
     }
 
     private sealed class ControlledWorkerProcess(

@@ -4,10 +4,12 @@ using Zlet.FolderConverter.Core.Models;
 
 namespace Zlet.FolderConverter.OfficeWorker;
 
-internal sealed class ComOfficeAutomation : IOfficeAutomation
+internal sealed class ComOfficeAutomation : IOfficeAutomation, IDisposable
 {
     private readonly IOfficeAutomationSessionFactory _sessionFactory;
     private readonly IOfficeProcessIdentityProvider _processIdentity;
+    private IOfficeAutomationSession? _session;
+    private OfficeApplicationKind? _sessionApplication;
 
     public ComOfficeAutomation()
         : this(
@@ -44,37 +46,54 @@ internal sealed class ComOfficeAutomation : IOfficeAutomation
         OfficeWorkerRequest request,
         Action<OfficeWorkerMessage> report)
     {
-        IOfficeAutomationSession? session = null;
         try
         {
-            var baseline = _processIdentity.Capture(application);
-            if (application == OfficeApplicationKind.PowerPoint && baseline.Count > 0)
+            if (_session is null)
             {
-                return Failure("powerpoint_already_running");
+                var baseline = _processIdentity.Capture(application);
+                if (application == OfficeApplicationKind.PowerPoint && baseline.Count > 0)
+                {
+                    return Failure("powerpoint_already_running");
+                }
+
+                _session = _sessionFactory.Create(application);
+                _sessionApplication = application;
+                var started = _processIdentity.CreateStartedMessage(
+                    application,
+                    _session.WindowHandle,
+                    baseline);
+                report(started);
+                _session.Configure();
+            }
+            else if (_sessionApplication != application)
+            {
+                return Failure("office_session_application_mismatch", sessionInvalid: true);
             }
 
-            session = _sessionFactory.Create(application);
-            var started = _processIdentity.CreateStartedMessage(
-                application,
-                session.WindowHandle,
-                baseline);
-            report(started);
-
-            session.Configure();
-            session.OpenAndSave(request);
+            _session.OpenAndSave(request);
             return Success();
         }
         catch (COMException exception)
         {
-            return Failure("office_com_failure", exception.HResult);
+            InvalidateSession();
+            return Failure(
+                "office_com_failure",
+                exception.HResult,
+                sessionInvalid: true);
         }
-        finally
+    }
+
+    public void Dispose() => InvalidateSession();
+
+    private void InvalidateSession()
+    {
+        if (_session is not null)
         {
-            if (session is not null)
-            {
-                TryInvoke(session.Cleanup);
-            }
+            TryInvoke(_session.Cleanup);
         }
+
+        _session = null;
+        _sessionApplication = null;
     }
 
     private static OfficeWorkerMessage Success() =>
@@ -82,12 +101,14 @@ internal sealed class ComOfficeAutomation : IOfficeAutomation
 
     private static OfficeWorkerMessage Failure(
         string errorCode,
-        int? hResult = null) =>
+        int? hResult = null,
+        bool sessionInvalid = false) =>
         new(
             OfficeWorkerMessageType.Result,
             false,
             errorCode,
-            HResult: hResult);
+            HResult: hResult,
+            SessionInvalid: sessionInvalid);
 
     private static void TryInvoke(Action action)
     {
@@ -187,19 +208,26 @@ internal sealed class ComOfficeAutomationSession(
 
     public void OpenAndSave(OfficeWorkerRequest request)
     {
-        switch (applicationKind)
+        try
         {
-            case OfficeApplicationKind.Word:
-                ConvertWord(request);
-                break;
-            case OfficeApplicationKind.Excel:
-                ConvertExcel(request);
-                break;
-            case OfficeApplicationKind.PowerPoint:
-                ConvertPowerPoint(request);
-                break;
-            default:
-                throw new COMException("The Office application is not supported.");
+            switch (applicationKind)
+            {
+                case OfficeApplicationKind.Word:
+                    ConvertWord(request);
+                    break;
+                case OfficeApplicationKind.Excel:
+                    ConvertExcel(request);
+                    break;
+                case OfficeApplicationKind.PowerPoint:
+                    ConvertPowerPoint(request);
+                    break;
+                default:
+                    throw new COMException("The Office application is not supported.");
+            }
+        }
+        finally
+        {
+            CloseAndReleaseDocument();
         }
     }
 
@@ -211,13 +239,9 @@ internal sealed class ComOfficeAutomationSession(
         }
 
         _cleaned = true;
-        TryCloseDocument();
+        CloseAndReleaseDocument();
         TryQuitApplication();
-        ReleaseComObject(_document);
-        ReleaseComObject(_collection);
         ReleaseComObject(application);
-        _document = null;
-        _collection = null;
     }
 
     private void ConvertWord(OfficeWorkerRequest request)
@@ -305,6 +329,15 @@ internal sealed class ComOfficeAutomationSession(
                 document.Close();
             }
         });
+    }
+
+    private void CloseAndReleaseDocument()
+    {
+        TryCloseDocument();
+        ReleaseComObject(_document);
+        ReleaseComObject(_collection);
+        _document = null;
+        _collection = null;
     }
 
     private void TryQuitApplication()

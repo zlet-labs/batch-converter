@@ -2,9 +2,11 @@ using Zlet.FolderConverter.Core.Models;
 
 namespace Zlet.FolderConverter.Core.Services;
 
-public sealed class DefaultConversionAdapterResolver : IConversionAdapterResolver
+public sealed class DefaultConversionAdapterResolver
+    : IConversionAdapterResolver, IConversionBatchLifecycle
 {
     private readonly IReadOnlyList<IConversionAdapter> _adapters;
+    private readonly IMicrosoftOfficeWorkerRunner? _workerRunner;
 
     public DefaultConversionAdapterResolver()
         : this(
@@ -18,6 +20,7 @@ public sealed class DefaultConversionAdapterResolver : IConversionAdapterResolve
         IMicrosoftOfficeWorkerRunner workerRunner)
         : this(CreateDefaultAdapters(capabilityDetector, workerRunner))
     {
+        _workerRunner = workerRunner;
     }
 
     public DefaultConversionAdapterResolver(IEnumerable<IConversionAdapter> adapters)
@@ -27,6 +30,12 @@ public sealed class DefaultConversionAdapterResolver : IConversionAdapterResolve
 
     public IConversionAdapter? Resolve(SourceFormat sourceFormat, ConversionTarget target) =>
         _adapters.FirstOrDefault(adapter => adapter.CanConvert(sourceFormat, target));
+
+    Task IConversionBatchLifecycle.BeginBatchAsync(CancellationToken cancellationToken) =>
+        _workerRunner?.BeginBatchAsync(cancellationToken) ?? Task.CompletedTask;
+
+    Task IConversionBatchLifecycle.EndBatchAsync() =>
+        _workerRunner?.EndBatchAsync() ?? Task.CompletedTask;
 
     private static IConversionAdapter[] CreateDefaultAdapters(
         IMicrosoftOfficeCapabilityDetector capabilityDetector,

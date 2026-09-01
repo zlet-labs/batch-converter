@@ -342,7 +342,81 @@ public sealed class PresentationTests : IDisposable
 
         Assert.Equal(100, viewModel.ProgressPercent);
         Assert.Equal("2 из 2", viewModel.ProgressCountText);
+        Assert.Equal("Прошло: 00:14", viewModel.ElapsedTimeText);
         Assert.Equal("Время выполнения: 00:14", viewModel.FinalDurationText);
+
+        clock.Advance(TimeSpan.FromMinutes(1));
+
+        Assert.Equal("Прошло: 00:14", viewModel.ElapsedTimeText);
+        Assert.Equal("Время выполнения: 00:14", viewModel.FinalDurationText);
+    }
+
+    [Fact]
+    public async Task New_scan_and_reset_clear_completed_duration()
+    {
+        var operations = CreateStatusOperations([OperationStatus.Ready]);
+        var clock = new ManualTimeProvider();
+        var processor = new CallbackProcessor((batch, _, _) =>
+        {
+            clock.Advance(TimeSpan.FromSeconds(9));
+            var result = new ConversionResult(batch[0], OperationStatus.Succeeded, "ok");
+            return Task.FromResult(new ConversionSummary(1, 0, 0, 0, 0, 0, [result]));
+        });
+        var viewModel = CreateStatusViewModel(operations, processor, clock);
+
+        await viewModel.ScanAsync();
+        await viewModel.ConvertAsync();
+        Assert.Equal("Время выполнения: 00:09", viewModel.FinalDurationText);
+
+        await viewModel.ScanAsync();
+        Assert.Equal(string.Empty, viewModel.FinalDurationText);
+        Assert.Equal("Прошло: 00:00", viewModel.ElapsedTimeText);
+
+        await viewModel.ConvertAsync();
+        Assert.Equal("Время выполнения: 00:09", viewModel.FinalDurationText);
+
+        viewModel.ResetOutputPath();
+        Assert.Equal(string.Empty, viewModel.FinalDurationText);
+        Assert.Equal("Прошло: 00:00", viewModel.ElapsedTimeText);
+        Assert.False(viewModel.HasFinalReport);
+    }
+
+    [Fact]
+    public async Task Cancellation_freezes_elapsed_and_next_batch_starts_at_zero()
+    {
+        var operations = CreateStatusOperations([OperationStatus.Ready]);
+        var clock = new ManualTimeProvider();
+        MainWindowViewModel? viewModel = null;
+        var invocation = 0;
+        var processor = new CallbackProcessor((batch, _, cancellationToken) =>
+        {
+            invocation++;
+            if (invocation == 1)
+            {
+                clock.Advance(TimeSpan.FromSeconds(7));
+                throw new OperationCanceledException(cancellationToken);
+            }
+
+            Assert.NotNull(viewModel);
+            Assert.Equal("Прошло: 00:00", viewModel.ElapsedTimeText);
+            Assert.Equal(string.Empty, viewModel.FinalDurationText);
+            clock.Advance(TimeSpan.FromSeconds(3));
+            var result = new ConversionResult(batch[0], OperationStatus.Succeeded, "ok");
+            return Task.FromResult(new ConversionSummary(1, 0, 0, 0, 0, 0, [result]));
+        });
+        viewModel = CreateStatusViewModel(operations, processor, clock);
+
+        await viewModel.ScanAsync();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => viewModel.ConvertAsync());
+        Assert.Equal("Прошло: 00:07", viewModel.ElapsedTimeText);
+        Assert.Equal("Время выполнения: 00:07", viewModel.FinalDurationText);
+
+        clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.Equal("Прошло: 00:07", viewModel.ElapsedTimeText);
+        Assert.Equal("Время выполнения: 00:07", viewModel.FinalDurationText);
+
+        await viewModel.ConvertAsync();
+        Assert.Equal("Время выполнения: 00:03", viewModel.FinalDurationText);
     }
 
     [Fact]
@@ -878,6 +952,17 @@ public sealed class PresentationTests : IDisposable
             IProgress<ConversionProgress>? progress,
             CancellationToken cancellationToken) =>
             Task.FromResult(summary);
+    }
+
+    private sealed class CallbackProcessor(
+        Func<IReadOnlyList<PlannedOperation>, IProgress<ConversionProgress>?, CancellationToken,
+            Task<ConversionSummary>> callback) : IConversionProcessor
+    {
+        public Task<ConversionSummary> ProcessAsync(
+            IReadOnlyList<PlannedOperation> operations,
+            IProgress<ConversionProgress>? progress,
+            CancellationToken cancellationToken) =>
+            callback(operations, progress, cancellationToken);
     }
 
     private sealed class TimedProgressProcessor(

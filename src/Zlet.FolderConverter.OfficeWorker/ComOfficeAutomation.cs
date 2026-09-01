@@ -4,10 +4,13 @@ using Zlet.FolderConverter.Core.Models;
 
 namespace Zlet.FolderConverter.OfficeWorker;
 
-internal sealed class ComOfficeAutomation : IOfficeAutomation
+internal sealed class ComOfficeAutomation : IOfficeAutomation, IDisposable
 {
     private readonly IOfficeAutomationSessionFactory _sessionFactory;
     private readonly IOfficeProcessIdentityProvider _processIdentity;
+    private IOfficeAutomationSession? _session;
+    private OfficeApplicationKind? _sessionApplication;
+    private OfficeWorkerMessage? _sessionOwnership;
 
     public ComOfficeAutomation()
         : this(
@@ -44,37 +47,138 @@ internal sealed class ComOfficeAutomation : IOfficeAutomation
         OfficeWorkerRequest request,
         Action<OfficeWorkerMessage> report)
     {
-        IOfficeAutomationSession? session = null;
         try
         {
-            var baseline = _processIdentity.Capture(application);
-            if (application == OfficeApplicationKind.PowerPoint && baseline.Count > 0)
+            if (_session is not null
+                && application == OfficeApplicationKind.PowerPoint
+                && !CanSafelyReusePowerPointSession(out var abandonOwnership))
             {
-                return Failure("powerpoint_already_running");
+                if (abandonOwnership)
+                {
+                    AbandonSession();
+                }
+                else
+                {
+                    InvalidateSession();
+                }
+
+                return Failure(
+                    "powerpoint_session_ownership_lost",
+                    sessionInvalid: true,
+                    abandonOfficeProcessOwnership: abandonOwnership);
             }
 
-            session = _sessionFactory.Create(application);
-            var started = _processIdentity.CreateStartedMessage(
-                application,
-                session.WindowHandle,
-                baseline);
-            report(started);
+            if (_session is null)
+            {
+                var baseline = _processIdentity.Capture(application);
+                if (application == OfficeApplicationKind.PowerPoint && baseline.Count > 0)
+                {
+                    return Failure("powerpoint_already_running");
+                }
 
-            session.Configure();
-            session.OpenAndSave(request);
+                _session = _sessionFactory.Create(application);
+                _sessionApplication = application;
+                var started = _processIdentity.CreateStartedMessage(
+                    application,
+                    _session.WindowHandle,
+                    baseline);
+                _sessionOwnership = started;
+                report(started);
+                _session.Configure();
+            }
+            else if (_sessionApplication != application)
+            {
+                return Failure("office_session_application_mismatch", sessionInvalid: true);
+            }
+
+            _session.OpenAndSave(request);
             return Success();
         }
         catch (COMException exception)
         {
-            return Failure("office_com_failure", exception.HResult);
+            InvalidateSession();
+            return Failure(
+                "office_com_failure",
+                exception.HResult,
+                sessionInvalid: true);
         }
-        finally
+    }
+
+    public void Dispose()
+    {
+        if (_sessionApplication == OfficeApplicationKind.PowerPoint
+            && !CanSafelyReusePowerPointSession(out var abandonOwnership)
+            && abandonOwnership)
         {
-            if (session is not null)
-            {
-                TryInvoke(session.Cleanup);
-            }
+            AbandonSession();
+            return;
         }
+
+        InvalidateSession();
+    }
+
+    private void InvalidateSession()
+    {
+        if (_session is not null)
+        {
+            TryInvoke(_session.Cleanup);
+        }
+
+        _session = null;
+        _sessionApplication = null;
+        _sessionOwnership = null;
+    }
+
+    private void AbandonSession()
+    {
+        if (_session is not null)
+        {
+            TryInvoke(_session.Abandon);
+        }
+
+        _session = null;
+        _sessionApplication = null;
+        _sessionOwnership = null;
+    }
+
+    private bool CanSafelyReusePowerPointSession(out bool abandonOwnership)
+    {
+        abandonOwnership = false;
+        if (_session is null
+            || _sessionOwnership is not
+            {
+                OfficeProcessOwned: true,
+                OfficeProcessId: > 0
+            } ownership)
+        {
+            abandonOwnership = true;
+            return false;
+        }
+
+        IReadOnlySet<int> currentProcesses;
+        try
+        {
+            if (_session.HasOpenDocuments)
+            {
+                abandonOwnership = true;
+                return false;
+            }
+
+            currentProcesses = _processIdentity.Capture(OfficeApplicationKind.PowerPoint);
+        }
+        catch (Exception)
+        {
+            abandonOwnership = true;
+            return false;
+        }
+
+        if (!currentProcesses.Contains(ownership.OfficeProcessId.Value))
+        {
+            abandonOwnership = true;
+            return false;
+        }
+
+        return currentProcesses.Count == 1;
     }
 
     private static OfficeWorkerMessage Success() =>
@@ -82,12 +186,16 @@ internal sealed class ComOfficeAutomation : IOfficeAutomation
 
     private static OfficeWorkerMessage Failure(
         string errorCode,
-        int? hResult = null) =>
+        int? hResult = null,
+        bool sessionInvalid = false,
+        bool abandonOfficeProcessOwnership = false) =>
         new(
             OfficeWorkerMessageType.Result,
             false,
             errorCode,
-            HResult: hResult);
+            HResult: hResult,
+            SessionInvalid: sessionInvalid,
+            AbandonOfficeProcessOwnership: abandonOfficeProcessOwnership);
 
     private static void TryInvoke(Action action)
     {
@@ -109,9 +217,11 @@ internal interface IOfficeAutomationSessionFactory
 internal interface IOfficeAutomationSession
 {
     long WindowHandle { get; }
+    bool HasOpenDocuments { get; }
     void Configure();
     void OpenAndSave(OfficeWorkerRequest request);
     void Cleanup();
+    void Abandon();
 }
 
 internal sealed class ComOfficeAutomationSessionFactory
@@ -159,6 +269,29 @@ internal sealed class ComOfficeAutomationSession(
         }
     }
 
+    public bool HasOpenDocuments
+    {
+        get
+        {
+            if (applicationKind != OfficeApplicationKind.PowerPoint)
+            {
+                return false;
+            }
+
+            dynamic value = application;
+            object presentations = value.Presentations;
+            try
+            {
+                dynamic collection = presentations;
+                return Convert.ToInt32(collection.Count) > 0;
+            }
+            finally
+            {
+                ReleaseComObject(presentations);
+            }
+        }
+    }
+
     public void Configure()
     {
         dynamic value = application;
@@ -187,19 +320,26 @@ internal sealed class ComOfficeAutomationSession(
 
     public void OpenAndSave(OfficeWorkerRequest request)
     {
-        switch (applicationKind)
+        try
         {
-            case OfficeApplicationKind.Word:
-                ConvertWord(request);
-                break;
-            case OfficeApplicationKind.Excel:
-                ConvertExcel(request);
-                break;
-            case OfficeApplicationKind.PowerPoint:
-                ConvertPowerPoint(request);
-                break;
-            default:
-                throw new COMException("The Office application is not supported.");
+            switch (applicationKind)
+            {
+                case OfficeApplicationKind.Word:
+                    ConvertWord(request);
+                    break;
+                case OfficeApplicationKind.Excel:
+                    ConvertExcel(request);
+                    break;
+                case OfficeApplicationKind.PowerPoint:
+                    ConvertPowerPoint(request);
+                    break;
+                default:
+                    throw new COMException("The Office application is not supported.");
+            }
+        }
+        finally
+        {
+            CloseAndReleaseDocument();
         }
     }
 
@@ -211,13 +351,21 @@ internal sealed class ComOfficeAutomationSession(
         }
 
         _cleaned = true;
-        TryCloseDocument();
+        CloseAndReleaseDocument();
         TryQuitApplication();
-        ReleaseComObject(_document);
-        ReleaseComObject(_collection);
         ReleaseComObject(application);
-        _document = null;
-        _collection = null;
+    }
+
+    public void Abandon()
+    {
+        if (_cleaned)
+        {
+            return;
+        }
+
+        _cleaned = true;
+        CloseAndReleaseDocument();
+        ReleaseComObject(application);
     }
 
     private void ConvertWord(OfficeWorkerRequest request)
@@ -305,6 +453,15 @@ internal sealed class ComOfficeAutomationSession(
                 document.Close();
             }
         });
+    }
+
+    private void CloseAndReleaseDocument()
+    {
+        TryCloseDocument();
+        ReleaseComObject(_document);
+        ReleaseComObject(_collection);
+        _document = null;
+        _collection = null;
     }
 
     private void TryQuitApplication()

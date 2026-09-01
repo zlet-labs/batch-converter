@@ -90,6 +90,9 @@ public sealed class MicrosoftOfficeConversionAdapter : IConversionAdapter
         {
             "powerpoint_already_running" =>
                 "PowerPoint уже запущен. Закройте его и повторите преобразование.",
+            "powerpoint_session_ownership_lost" =>
+                "Сеанс PowerPoint изменён пользователем. Текущий файл не преобразован, "
+                + "чтобы не закрыть пользовательскую презентацию.",
             "office_com_failure" when result.HResult == unchecked((int)0x80080005) =>
                 $"{_application.ToDisplayName()} не запустился через Windows. "
                 + $"Откройте {ShortDisplayName()} вручную, устраните ошибку запуска, "

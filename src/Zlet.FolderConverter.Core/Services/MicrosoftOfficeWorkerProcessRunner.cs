@@ -21,6 +21,9 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
     private readonly MicrosoftOfficeWorkerOptions _options;
     private readonly IOfficeWorkerProcessLauncher _launcher;
     private readonly IOwnedOfficeProcessTerminator _officeProcessTerminator;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private WorkerSession? _session;
+    private bool _batchActive;
 
     public MicrosoftOfficeWorkerProcessRunner(MicrosoftOfficeWorkerOptions? options = null)
         : this(
@@ -42,6 +45,38 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
 
     public bool IsAvailable => File.Exists(_options.WorkerExecutablePath);
 
+    public async Task BeginBatchAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_batchActive)
+            {
+                throw new InvalidOperationException("An Office worker batch is already active.");
+            }
+
+            _batchActive = true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task EndBatchAsync()
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            _batchActive = false;
+            await ShutdownSessionAsync(force: false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<OfficeWorkerExecutionResult> RunAsync(
         OfficeWorkerRequest request,
         CancellationToken cancellationToken)
@@ -52,38 +87,83 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
             return new(false, "worker_missing");
         }
 
-        IOfficeWorkerProcess? process = null;
-        WorkerMessageState? state = null;
-        Task? outputTask = null;
-        Task<bool>? errorTask = null;
-        Task? waitTask = null;
-        var shutdownPerformed = false;
+        await _gate.WaitAsync(cancellationToken);
+        var closeAfterRequest = !_batchActive;
         try
         {
-            process = _launcher.Start(_options.WorkerExecutablePath);
-            state = new WorkerMessageState();
-            outputTask = ReadMessagesAsync(process.StandardOutput, state);
-            errorTask = ReadHasContentAsync(process.StandardError);
-            waitTask = process.WaitForExitAsync(CancellationToken.None);
+            if (_session is not null && _session.Application != request.Application)
+            {
+                await ShutdownSessionAsync(force: false);
+            }
 
-            var requestJson = JsonSerializer.Serialize(request, JsonOptions);
-            await process.StandardInput.WriteLineAsync(
-                requestJson.AsMemory(),
-                cancellationToken);
-            process.StandardInput.Close();
+            if (_session is null)
+            {
+                try
+                {
+                    var process = _launcher.Start(_options.WorkerExecutablePath);
+                    _session = new WorkerSession(request.Application, process);
+                }
+                catch (Exception exception) when (exception is IOException
+                                                   or InvalidOperationException
+                                                   or System.ComponentModel.Win32Exception)
+                {
+                    return new(false, "worker_start_failure", SessionInvalid: true);
+                }
+            }
+
+            return await ExecuteAsync(_session, request, cancellationToken);
+        }
+        finally
+        {
+            if (closeAfterRequest)
+            {
+                await ShutdownSessionAsync(force: false);
+            }
+
+            _gate.Release();
+        }
+    }
+
+    private async Task<OfficeWorkerExecutionResult> ExecuteAsync(
+        WorkerSession session,
+        OfficeWorkerRequest request,
+        CancellationToken cancellationToken)
+    {
+        var diagnostics = session.BeginRequest();
+        var responseTask = ReadResponseAsync(session, diagnostics);
+        try
+        {
+            try
+            {
+                var requestJson = JsonSerializer.Serialize(request, JsonOptions);
+                await session.Process.StandardInput.WriteLineAsync(
+                    requestJson.AsMemory(),
+                    cancellationToken);
+                await session.Process.StandardInput.FlushAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                await ShutdownSessionAsync(force: true, responseTask);
+                throw;
+            }
+            catch (Exception exception) when (exception is IOException
+                                               or InvalidOperationException
+                                               or ObjectDisposedException)
+            {
+                await ShutdownSessionAsync(force: true, responseTask);
+                return new(
+                    false,
+                    "worker_protocol_failure",
+                    HasStandardOutput: diagnostics.HasOutput,
+                    HasStandardError: diagnostics.HasStandardError,
+                    SessionInvalid: true);
+            }
 
             var delayTask = Task.Delay(_options.Timeout, cancellationToken);
-            var completed = await Task.WhenAny(waitTask, delayTask);
-            if (completed != waitTask)
+            var completed = await Task.WhenAny(responseTask, delayTask);
+            if (completed != responseTask)
             {
-                await ShutdownWorkerAsync(
-                    process,
-                    waitTask,
-                    outputTask,
-                    errorTask,
-                    state,
-                    request.Application);
-                shutdownPerformed = true;
+                await ShutdownSessionAsync(force: true, responseTask);
                 if (cancellationToken.IsCancellationRequested)
                 {
                     throw new OperationCanceledException(cancellationToken);
@@ -93,96 +173,170 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
                     false,
                     "worker_timeout",
                     TimedOut: true,
-                    HasStandardOutput: state.HasOutput,
-                    HasStandardError: errorTask.IsCompletedSuccessfully && errorTask.Result);
+                    HasStandardOutput: diagnostics.HasOutput,
+                    HasStandardError: diagnostics.HasStandardError,
+                    SessionInvalid: true);
             }
 
-            await waitTask;
-            await outputTask;
-            var hasError = await errorTask;
-            var result = state.GetResult();
+            OfficeWorkerMessage? result;
+            try
+            {
+                result = await responseTask;
+            }
+            catch (Exception exception) when (exception is IOException
+                                               or InvalidOperationException
+                                               or ObjectDisposedException)
+            {
+                await ShutdownSessionAsync(force: true);
+                return new(
+                    false,
+                    "worker_protocol_failure",
+                    HasStandardOutput: diagnostics.HasOutput,
+                    HasStandardError: diagnostics.HasStandardError,
+                    SessionInvalid: true);
+            }
+
             if (result is null)
             {
+                var exitCode = session.WaitTask.IsCompletedSuccessfully
+                    ? (int?)session.Process.ExitCode
+                    : null;
+                await ShutdownSessionAsync(force: true);
                 return new(
                     false,
                     "worker_result_missing",
-                    process.ExitCode,
-                    HasStandardOutput: state.HasOutput,
-                    HasStandardError: hasError);
+                    exitCode,
+                    HasStandardOutput: diagnostics.HasOutput,
+                    HasStandardError: diagnostics.HasStandardError,
+                    SessionInvalid: true);
             }
 
-            return new(
+            if (result.AbandonOfficeProcessOwnership)
+            {
+                session.Ownership = null;
+            }
+
+            var executionResult = new OfficeWorkerExecutionResult(
                 result.Success,
                 result.ErrorCode,
-                process.ExitCode,
-                HasStandardOutput: state.HasOutput,
-                HasStandardError: hasError,
-                HResult: result.HResult);
-        }
-        catch (OperationCanceledException)
-        {
-            if (!shutdownPerformed && process is not null && state is not null)
+                HasStandardOutput: diagnostics.HasOutput,
+                HasStandardError: diagnostics.HasStandardError,
+                HResult: result.HResult,
+                SessionInvalid: result.SessionInvalid);
+            if (result.SessionInvalid)
             {
-                await ShutdownWorkerAsync(
-                    process,
-                    waitTask,
-                    outputTask,
-                    errorTask,
-                    state,
-                    request.Application);
+                await ShutdownSessionAsync(force: true);
             }
 
-            throw;
-        }
-        catch (Exception exception) when (exception is IOException
-                                           or InvalidOperationException
-                                           or System.ComponentModel.Win32Exception
-                                           or JsonException)
-        {
-            if (!shutdownPerformed && process is not null && state is not null)
-            {
-                await ShutdownWorkerAsync(
-                    process,
-                    waitTask,
-                    outputTask,
-                    errorTask,
-                    state,
-                    request.Application);
-            }
-
-            return new(false, "worker_start_failure");
+            return executionResult;
         }
         finally
         {
-            process?.Dispose();
+            session.EndRequest(diagnostics);
         }
     }
 
-    private async Task ShutdownWorkerAsync(
-        IOfficeWorkerProcess process,
-        Task? waitTask,
-        Task? outputTask,
-        Task<bool>? errorTask,
-        WorkerMessageState state,
-        OfficeApplicationKind application)
+    private static async Task<OfficeWorkerMessage?> ReadResponseAsync(
+        WorkerSession session,
+        RequestDiagnostics diagnostics)
     {
-        process.Kill();
-
-        var pending = new[] { waitTask, outputTask, errorTask }
-            .Where(task => task is not null)
-            .Select(task => IgnoreFailureAsync(task!))
-            .ToArray();
-        if (pending.Length > 0)
+        while (await session.Process.StandardOutput.ReadLineAsync() is { } line)
         {
-            var drainTask = Task.WhenAll(pending);
-            await Task.WhenAny(drainTask, Task.Delay(_options.ShutdownTimeout));
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            diagnostics.MarkOutput();
+            OfficeWorkerMessage? message;
+            try
+            {
+                message = JsonSerializer.Deserialize<OfficeWorkerMessage>(line, JsonOptions);
+            }
+            catch (JsonException)
+            {
+                return new OfficeWorkerMessage(
+                    OfficeWorkerMessageType.Result,
+                    false,
+                    "worker_protocol_invalid",
+                    SessionInvalid: true);
+            }
+
+            if (message?.MessageType == OfficeWorkerMessageType.Started
+                && message.OfficeProcessOwned
+                && message.OfficeProcessId is > 0
+                && message.OfficeProcessStartTimeUtcTicks is > 0)
+            {
+                session.Ownership = new OfficeProcessOwnership(
+                    message.OfficeProcessId.Value,
+                    message.OfficeProcessStartTimeUtcTicks.Value);
+            }
+            else if (message?.MessageType == OfficeWorkerMessageType.Result)
+            {
+                return message;
+            }
         }
 
-        var ownership = state.GetOwnership();
-        if (ownership is not null)
+        return null;
+    }
+
+    private async Task ShutdownSessionAsync(
+        bool force,
+        Task<OfficeWorkerMessage?>? responseTask = null)
+    {
+        var session = _session;
+        if (session is null)
         {
-            _officeProcessTerminator.TryTerminate(application, ownership);
+            return;
         }
+
+        _session = null;
+        if (!force)
+        {
+            try
+            {
+                session.Process.StandardInput.Close();
+            }
+            catch (Exception exception) when (exception is IOException
+                                               or InvalidOperationException
+                                               or ObjectDisposedException)
+            {
+                force = true;
+            }
+        }
+
+        if (!force)
+        {
+            var completed = await Task.WhenAny(
+                session.WaitTask,
+                Task.Delay(_options.ShutdownTimeout));
+            force = completed != session.WaitTask;
+        }
+
+        if (force)
+        {
+            session.Process.Kill();
+        }
+
+        if (responseTask is not null)
+        {
+            await Task.WhenAny(
+                IgnoreFailureAsync(responseTask),
+                Task.Delay(_options.ShutdownTimeout));
+        }
+
+        await Task.WhenAny(
+            Task.WhenAll(
+                IgnoreFailureAsync(session.WaitTask),
+                IgnoreFailureAsync(session.ErrorTask)),
+            Task.Delay(_options.ShutdownTimeout));
+
+        if (force && session.Ownership is not null)
+        {
+            _officeProcessTerminator.TryTerminate(session.Application, session.Ownership);
+        }
+
+        session.Dispose();
     }
 
     private static async Task IgnoreFailureAsync(Task task)
@@ -196,114 +350,106 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
         }
     }
 
-    private static async Task ReadMessagesAsync(
-        TextReader reader,
-        WorkerMessageState state)
+    private sealed class WorkerSession : IDisposable
     {
-        while (await reader.ReadLineAsync() is { } line)
+        private readonly object _diagnosticGate = new();
+        private RequestDiagnostics? _activeDiagnostics;
+        private bool _pendingStandardError;
+        private bool _hasStartedRequest;
+
+        public WorkerSession(
+            OfficeApplicationKind application,
+            IOfficeWorkerProcess process)
         {
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                continue;
-            }
+            Application = application;
+            Process = process;
+            WaitTask = process.WaitForExitAsync(CancellationToken.None);
+            ErrorTask = ReadStandardErrorAsync(process.StandardError, this);
+        }
 
-            state.MarkOutput();
-            OfficeWorkerMessage? message;
-            try
-            {
-                message = JsonSerializer.Deserialize<OfficeWorkerMessage>(line, JsonOptions);
-            }
-            catch (JsonException)
-            {
-                state.MarkInvalidOutput();
-                continue;
-            }
+        public OfficeApplicationKind Application { get; }
+        public IOfficeWorkerProcess Process { get; }
+        public Task WaitTask { get; }
+        public Task ErrorTask { get; }
+        public OfficeProcessOwnership? Ownership { get; set; }
 
-            if (message is not null)
+        public RequestDiagnostics BeginRequest()
+        {
+            lock (_diagnosticGate)
             {
-                state.Accept(message);
+                if (_activeDiagnostics is not null)
+                {
+                    throw new InvalidOperationException(
+                        "An Office worker request is already active.");
+                }
+
+                var diagnostics = new RequestDiagnostics();
+                if (_pendingStandardError)
+                {
+                    diagnostics.MarkStandardError();
+                    _pendingStandardError = false;
+                }
+
+                _hasStartedRequest = true;
+                _activeDiagnostics = diagnostics;
+                return diagnostics;
+            }
+        }
+
+        public void EndRequest(RequestDiagnostics diagnostics)
+        {
+            lock (_diagnosticGate)
+            {
+                if (ReferenceEquals(_activeDiagnostics, diagnostics))
+                {
+                    _activeDiagnostics = null;
+                }
+            }
+        }
+
+        public void Dispose() => Process.Dispose();
+
+        private static async Task ReadStandardErrorAsync(
+            TextReader reader,
+            WorkerSession session)
+        {
+            while (await reader.ReadLineAsync() is { } line)
+            {
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    session.MarkStandardError();
+                }
+            }
+        }
+
+        private void MarkStandardError()
+        {
+            lock (_diagnosticGate)
+            {
+                if (_activeDiagnostics is not null)
+                {
+                    _activeDiagnostics.MarkStandardError();
+                }
+                else if (!_hasStartedRequest)
+                {
+                    _pendingStandardError = true;
+                }
             }
         }
     }
 
-    private static async Task<bool> ReadHasContentAsync(TextReader reader)
+    private sealed class RequestDiagnostics
     {
-        var content = await reader.ReadToEndAsync();
-        return !string.IsNullOrWhiteSpace(content);
-    }
+        private int _hasOutput;
+        private int _hasStandardError;
 
-    private sealed class WorkerMessageState
-    {
-        private readonly object _gate = new();
-        private OfficeProcessOwnership? _ownership;
-        private OfficeWorkerMessage? _result;
-        private bool _hasOutput;
+        public bool HasOutput => Volatile.Read(ref _hasOutput) != 0;
+        public bool HasStandardError => Volatile.Read(ref _hasStandardError) != 0;
 
-        public bool HasOutput
-        {
-            get
-            {
-                lock (_gate)
-                {
-                    return _hasOutput;
-                }
-            }
-        }
+        public void MarkOutput() => Volatile.Write(ref _hasOutput, 1);
 
-        public void MarkOutput()
-        {
-            lock (_gate)
-            {
-                _hasOutput = true;
-            }
-        }
-
-        public void MarkInvalidOutput()
-        {
-            lock (_gate)
-            {
-                _result ??= new OfficeWorkerMessage(
-                    OfficeWorkerMessageType.Result,
-                    false,
-                    "worker_protocol_invalid");
-            }
-        }
-
-        public void Accept(OfficeWorkerMessage message)
-        {
-            lock (_gate)
-            {
-                if (message.MessageType == OfficeWorkerMessageType.Started
-                    && message.OfficeProcessOwned
-                    && message.OfficeProcessId is > 0
-                    && message.OfficeProcessStartTimeUtcTicks is > 0)
-                {
-                    _ownership = new OfficeProcessOwnership(
-                        message.OfficeProcessId.Value,
-                        message.OfficeProcessStartTimeUtcTicks.Value);
-                }
-                else if (message.MessageType == OfficeWorkerMessageType.Result)
-                {
-                    _result = message;
-                }
-            }
-        }
-
-        public OfficeProcessOwnership? GetOwnership()
-        {
-            lock (_gate)
-            {
-                return _ownership;
-            }
-        }
-
-        public OfficeWorkerMessage? GetResult()
-        {
-            lock (_gate)
-            {
-                return _result;
-            }
-        }
+        public void MarkStandardError() =>
+            Volatile.Write(ref _hasStandardError, 1);
     }
 }
 

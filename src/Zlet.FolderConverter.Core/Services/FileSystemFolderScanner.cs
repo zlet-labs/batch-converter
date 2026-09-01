@@ -95,7 +95,8 @@ public sealed class FileSystemFolderScanner : IFolderScanner
                 files.Add(new ScannedFile(
                     filePath,
                     relativePath,
-                    DocumentFormatDetector.Detect(filePath)));
+                    DocumentFormatDetector.Detect(filePath),
+                    GetFileSize(filePath)));
             }
 
             if (!includeSubfolders)
@@ -149,6 +150,18 @@ public sealed class FileSystemFolderScanner : IFolderScanner
     public static bool IsTemporaryMicrosoftOfficeFile(string filePath)
     {
         return Path.GetFileName(filePath).StartsWith("~$", StringComparison.Ordinal);
+    }
+
+    private static long GetFileSize(string filePath)
+    {
+        try
+        {
+            return new FileInfo(filePath).Length;
+        }
+        catch (Exception exception) when (IsRecoverableFileSystemException(exception))
+        {
+            return 0;
+        }
     }
 
     private static bool IsExcludedDirectory(string directoryPath, string? excludedDirectory)

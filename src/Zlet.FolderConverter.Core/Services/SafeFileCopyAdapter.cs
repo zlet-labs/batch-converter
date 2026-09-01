@@ -22,6 +22,12 @@ public sealed class SafeFileCopyAdapter : IConversionAdapter
 
     public Task<ConversionResult> ConvertAsync(
         PlannedOperation operation,
+        CancellationToken cancellationToken) =>
+        ConvertAsync(operation, progress: null, cancellationToken);
+
+    public Task<ConversionResult> ConvertAsync(
+        PlannedOperation operation,
+        IProgress<int>? progress,
         CancellationToken cancellationToken)
     {
         var validationTarget = operation.SourceFormat switch
@@ -64,6 +70,7 @@ public sealed class SafeFileCopyAdapter : IConversionAdapter
                 return new TemporaryOutputProductionResult(true);
             },
             "Скопировано.",
+            progress,
             cancellationToken);
     }
 }

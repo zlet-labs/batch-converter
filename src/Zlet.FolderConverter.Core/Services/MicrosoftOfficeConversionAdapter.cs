@@ -37,6 +37,12 @@ public sealed class MicrosoftOfficeConversionAdapter : IConversionAdapter
 
     public Task<ConversionResult> ConvertAsync(
         PlannedOperation operation,
+        CancellationToken cancellationToken) =>
+        ConvertAsync(operation, progress: null, cancellationToken);
+
+    public Task<ConversionResult> ConvertAsync(
+        PlannedOperation operation,
+        IProgress<int>? progress,
         CancellationToken cancellationToken)
     {
         if (!CanConvert(operation.SourceFormat, operation.Target))
@@ -82,6 +88,7 @@ public sealed class MicrosoftOfficeConversionAdapter : IConversionAdapter
                         workerResult.HResult);
             },
             "Преобразовано.",
+            progress,
             cancellationToken);
     }
 

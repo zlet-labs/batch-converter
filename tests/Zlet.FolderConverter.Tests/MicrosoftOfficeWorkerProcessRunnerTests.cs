@@ -23,15 +23,18 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
         var process = new ControlledWorkerProcess(new DeferredTextReader());
         var officeTerminator = new RecordingOfficeTerminator();
         var runner = CreateRunner(process, officeTerminator);
+        var stopwatch = Stopwatch.StartNew();
 
         var result = await runner.RunAsync(
             Request(OfficeApplicationKind.Word),
             CancellationToken.None);
 
+        stopwatch.Stop();
         Assert.True(result.TimedOut);
         Assert.Equal("worker_timeout", result.ErrorCode);
         Assert.True(process.KillCalled);
         Assert.False(officeTerminator.WasCalled);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1));
     }
 
     [Fact]
@@ -76,7 +79,7 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task Cancellation_terminates_worker_without_hanging()
+    public async Task Cancellation_before_started_terminates_worker_without_hanging()
     {
         var process = new ControlledWorkerProcess(new DeferredTextReader());
         var runner = CreateRunner(
@@ -97,7 +100,7 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task Cancellation_after_office_start_captures_and_terminates_owned_process()
+    public async Task Cancellation_during_slow_activation_kills_worker_then_drains_owned_started()
     {
         var ownership = new OfficeProcessOwnership(
             4242,
@@ -120,6 +123,31 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
         Assert.True(process.KillCalled);
         Assert.Equal(OfficeApplicationKind.Word, terminator.Application);
         Assert.Equal(ownership, terminator.Ownership);
+    }
+
+    [Fact]
+    public async Task Cancellation_never_terminates_started_but_unowned_user_office()
+    {
+        var ownership = new OfficeProcessOwnership(
+            4242,
+            638900000000000000);
+        using var cancellation = new CancellationTokenSource();
+        var process = new OwnershipDuringWriteProcess(
+            StartedLine(ownership, owned: false),
+            cancellation);
+        var terminator = new RecordingOfficeTerminator();
+        var runner = CreateRunner(
+            new FakeLauncher(process),
+            terminator,
+            timeout: TimeSpan.FromSeconds(10));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            runner.RunAsync(
+                Request(OfficeApplicationKind.Word),
+                cancellation.Token));
+
+        Assert.True(process.KillCalled);
+        Assert.False(terminator.WasCalled);
     }
 
     [Fact]

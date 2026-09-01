@@ -11,12 +11,12 @@ public sealed class ProductMetadataTests
     public void App_assembly_uses_public_product_identity_and_version()
     {
         Assert.Equal("ZletBatchConverter", AppAssembly.GetName().Name);
-        Assert.Equal(new Version(0, 0, 1, 0), AppAssembly.GetName().Version);
+        Assert.Equal(new Version(0, 0, 2, 0), AppAssembly.GetName().Version);
         Assert.Equal("Zlet Batch Converter",
             AppAssembly.GetCustomAttribute<AssemblyProductAttribute>()?.Product);
-        Assert.Equal("0.0.1.0",
+        Assert.Equal("0.0.2.0",
             AppAssembly.GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version);
-        Assert.Equal("0.0.1",
+        Assert.Equal("0.0.2",
             AppAssembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
     }
 
@@ -26,17 +26,17 @@ public sealed class ProductMetadataTests
         var metadata = AppAssembly
             .GetCustomAttributes<AssemblyMetadataAttribute>()
             .ToDictionary(attribute => attribute.Key, attribute => attribute.Value);
-        Assert.Equal("v0.0.1", metadata["DisplayVersion"]);
-        Assert.Equal("ZletBatchConverter-v0.0.1-win-x64", metadata["PortablePackageName"]);
+        Assert.Equal("v0.0.2", metadata["DisplayVersion"]);
+        Assert.Equal("ZletBatchConverter-v0.0.2-win-x64", metadata["PortablePackageName"]);
     }
 
     [Fact]
     public void Public_identity_drives_ui_and_result_zip_names()
     {
         Assert.Equal("Zlet Batch Converter", global::Zlet.FolderConverter.App.ProductIdentity.Name);
-        Assert.Equal("0.0.1", global::Zlet.FolderConverter.App.ProductIdentity.Version);
+        Assert.Equal("0.0.2", global::Zlet.FolderConverter.App.ProductIdentity.Version);
         Assert.Equal(
-            "ZletBatchConverter-v0.0.1-results.zip",
+            "ZletBatchConverter-v0.0.2-results.zip",
             global::Zlet.FolderConverter.App.ProductIdentity.ResultZipFileName);
     }
 
@@ -48,9 +48,9 @@ public sealed class ProductMetadataTests
         var portableReadme = File.ReadAllText(Path.Combine(root, "README_PORTABLE.txt"));
 
         Assert.Contains("# Zlet Batch Converter", readme);
-        Assert.Contains("v0.0.1", readme);
+        Assert.Contains("v0.0.2", readme);
         Assert.Contains("https://github.com/zlet-labs/batch-converter", readme);
-        Assert.Contains("ZletBatchConverter-v0.0.1-win-x64.zip", portableReadme);
+        Assert.Contains("ZletBatchConverter-v0.0.2-win-x64.zip", portableReadme);
         Assert.DoesNotContain("Zlet Folder Converter", readme);
     }
 

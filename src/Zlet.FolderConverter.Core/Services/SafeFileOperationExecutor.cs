@@ -33,6 +33,7 @@ internal sealed class SafeFileOperationExecutor
         ConversionTarget validationTarget,
         Func<string, CancellationToken, Task<TemporaryOutputProductionResult>> produceAsync,
         string successMessage,
+        IProgress<int>? progress,
         CancellationToken cancellationToken)
     {
         var sourceRoot = ResolveSourceRoot(operation);
@@ -91,6 +92,7 @@ internal sealed class SafeFileOperationExecutor
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(temporaryOutput)!);
+            progress?.Report(25);
             var production = await produceAsync(temporaryOutput, cancellationToken);
             if (!production.Success)
             {
@@ -105,6 +107,7 @@ internal sealed class SafeFileOperationExecutor
                     production.HasStandardError,
                     production.HResult);
             }
+            progress?.Report(55);
 
             if (!File.Exists(temporaryOutput)
                 || new FileInfo(temporaryOutput).Length == 0)
@@ -145,6 +148,7 @@ internal sealed class SafeFileOperationExecutor
                     "Исходный файл изменился во время обработки.",
                     "source_changed");
             }
+            progress?.Report(80);
 
             var targetDirectory = Path.GetDirectoryName(operation.TargetPath);
             if (string.IsNullOrWhiteSpace(targetDirectory))
@@ -188,6 +192,7 @@ internal sealed class SafeFileOperationExecutor
                     "Формат результата не прошёл проверку.",
                     stagingValidation.ErrorCode);
             }
+            progress?.Report(92);
 
             File.Move(stagingPath, operation.TargetPath, overwrite: false);
             stagingPath = null;
@@ -201,6 +206,7 @@ internal sealed class SafeFileOperationExecutor
                     "Формат результата не прошёл проверку.",
                     finalValidation.ErrorCode);
             }
+            progress?.Report(95);
 
             return new ConversionResult(operation, OperationStatus.Succeeded, successMessage);
         }

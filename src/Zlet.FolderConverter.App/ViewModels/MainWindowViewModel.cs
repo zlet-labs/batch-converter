@@ -22,6 +22,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _includeSubfolders = true;
     private bool _isScanning;
     private bool _isConverting;
+    private bool _isStopping;
+    private CancellationTokenSource? _conversionCancellation;
+    private string _copyListStatus = string.Empty;
     private string _stateMessage = "Выберите папку и найдите файлы.";
     private string _emptyStateMessage = "Preview появится после сканирования папки.";
     private RuleSet _ruleSet = RuleSet.CreateDefault();
@@ -45,7 +48,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private string _remainingTimeText = "Осталось: рассчитываем…";
     private string _finalDurationText = string.Empty;
     private bool _hasFinalReport;
-    private int _finalSucceeded;
+    private string _finalReportTitle = "Обработка завершена";
+    private int _finalConverted;
+    private int _finalCopied;
     private int _finalFailed;
     private int _finalConflicts;
     private int _finalUnavailable;
@@ -285,6 +290,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             {
                 NotifyAvailability();
                 OnPropertyChanged(nameof(ShowProgress));
+                OnPropertyChanged(nameof(ShowStopButton));
+            }
+        }
+    }
+
+    public bool IsStopping
+    {
+        get => _isStopping;
+        private set
+        {
+            if (SetProperty(ref _isStopping, value))
+            {
+                OnPropertyChanged(nameof(StopButtonText));
+                OnPropertyChanged(nameof(CanStop));
             }
         }
     }
@@ -302,6 +321,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public bool HasEngineUnavailable => Operations.Any(
         row => row.Operation.Status == OperationStatus.EngineUnavailable);
     public bool ShowProgress => IsConverting;
+    public bool ShowStopButton => IsConverting;
+    public bool CanStop => IsConverting && !IsStopping;
+    public string StopButtonText => IsStopping ? "Останавливаем…" : "Остановить";
+    public bool CanCopyConversionList => HasPreview && !IsBusy;
+    public string CopyListStatus
+    {
+        get => _copyListStatus;
+        private set => SetProperty(ref _copyListStatus, value);
+    }
     public bool CanOpenResult => SelectedOutputMode == OutputMode.Folder
         ? Directory.Exists(ResultFolder)
         : File.Exists(ResultFolder);
@@ -447,11 +475,32 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _hasFinalReport, value);
     }
 
-    public int FinalSucceeded
+    public int FinalConverted
     {
-        get => _finalSucceeded;
-        private set => SetProperty(ref _finalSucceeded, value);
+        get => _finalConverted;
+        private set
+        {
+            if (SetProperty(ref _finalConverted, value))
+                OnPropertyChanged(nameof(FinalSucceeded));
+        }
     }
+
+    public string FinalReportTitle
+    {
+        get => _finalReportTitle;
+        private set => SetProperty(ref _finalReportTitle, value);
+    }
+
+    public int FinalCopied
+    {
+        get => _finalCopied;
+        private set
+        {
+            if (SetProperty(ref _finalCopied, value))
+                OnPropertyChanged(nameof(FinalSucceeded));
+        }
+    }
+    public int FinalSucceeded => FinalConverted + FinalCopied;
 
     public int FinalFailed
     {
@@ -576,7 +625,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var selectedRows = originalRows
             .Where(row => row.CanSelect && row.IsSelected)
             .ToArray();
-        var operations = selectedRows.Select(row => row.Operation).ToArray();
+        var operations = selectedRows.Select(row => row.Operation with
+        {
+            Status = OperationStatus.Ready,
+            Message = "Готово к обработке."
+        }).ToArray();
         if (operations.Length == 0)
         {
             return;
@@ -594,8 +647,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             TryDeleteZipStaging();
         }
 
+        _conversionCancellation?.Dispose();
+        _conversionCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        IsStopping = false;
         IsConverting = true;
         HasFinalReport = false;
+        CopyListStatus = string.Empty;
+        FinalReportTitle = "Обработка завершена";
+        ResetFinalCounters();
         _progressCompleted = 0;
         _progressTotal = operations.Length;
         OnPropertyChanged(nameof(ProgressCountText));
@@ -611,7 +670,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             var summary = await _conversionProcessor.ProcessAsync(
                 operations,
                 progress,
-                cancellationToken);
+                _conversionCancellation.Token);
             if (SelectedOutputMode == OutputMode.Zip)
             {
                 try
@@ -620,7 +679,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         _zipStagingRoot,
                         NormalizePathInput(OutputPath),
                         summary,
-                        cancellationToken);
+                        _conversionCancellation.Token);
                     if (!zipResult.Created)
                     {
                         AddError(zipResult.ErrorCode == "no_successful_outputs"
@@ -638,40 +697,39 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             var resultsBySource = summary.Results.ToDictionary(
                 result => result.Operation.SourcePath,
                 StringComparer.OrdinalIgnoreCase);
-            Operations.Clear();
-            foreach (var row in originalRows)
+            var now = _timeProvider.GetTimestamp();
+            foreach (var row in Operations)
             {
-                if (!resultsBySource.TryGetValue(row.Operation.SourcePath, out var result))
+                if (resultsBySource.TryGetValue(row.Operation.SourcePath, out var result))
                 {
-                    Operations.Add(new OperationRowViewModel(
-                        row.Operation,
-                        isSelected: false,
-                        isNotSelected: row.Operation.Status == OperationStatus.Ready,
-                        selectionChanged: SelectionChanged));
+                    if (row.Operation.Status is OperationStatus.Ready
+                        or OperationStatus.Converting
+                        or OperationStatus.Cancelled
+                        or OperationStatus.NotProcessed)
+                    {
+                        row.CompleteExecution(result, _timeProvider, now);
+                    }
                     continue;
                 }
 
-                var completedOperation = result.Operation with
+                if (row.Operation.Status == OperationStatus.Ready && !row.IsSelected)
                 {
-                    Status = result.Status,
-                    Message = result.Message
-                };
-                Operations.Add(new OperationRowViewModel(
-                    completedOperation,
-                    result with { Operation = completedOperation },
-                    isSelected: false,
-                    selectionChanged: SelectionChanged));
-                if (result.Status == OperationStatus.Failed)
-                {
-                    AddError(FormatConversionError(result));
+                    row.MarkNotSelected();
                 }
             }
 
+            AddFailureErrorsFromRows();
+
             UpdatePreviewSummary();
-            FinalSucceeded = summary.Succeeded;
-            FinalFailed = summary.Failed;
             var unprocessedRows = originalRows.Where(row =>
                 !resultsBySource.ContainsKey(row.Operation.SourcePath)).ToArray();
+            FinalConverted = summary.Results.Count(result =>
+                result.Status == OperationStatus.Succeeded
+                && result.Operation.Target != ConversionTarget.Copy);
+            FinalCopied = summary.Results.Count(result =>
+                result.Status == OperationStatus.Succeeded
+                && result.Operation.Target == ConversionTarget.Copy);
+            FinalFailed = Operations.Count(row => row.Operation.Status == OperationStatus.Failed);
             FinalConflicts = summary.Conflicts + unprocessedRows.Count(row =>
                 row.Operation.Status == OperationStatus.Conflict);
             FinalUnavailable = summary.EngineUnavailable + summary.Unsupported
@@ -699,9 +757,67 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         catch (OperationCanceledException)
         {
             FreezeConversionTiming();
-            RebuildPreview();
-            StateMessage = "Обработка отменена. Preview обновлён.";
-            throw;
+            if (IsStopping)
+            {
+                var now = _timeProvider.GetTimestamp();
+                foreach (var row in Operations)
+                {
+                    if (!selectedRows.Any(selected => string.Equals(
+                            selected.SourcePath, row.SourcePath, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        if (row.Operation.Status == OperationStatus.Ready) row.MarkNotSelected();
+                        continue;
+                    }
+
+                    if (row.Operation.Status == OperationStatus.Cancelled)
+                        continue;
+                    if (row.Operation.Status == OperationStatus.Converting)
+                        row.CancelExecution(_timeProvider, now);
+                    else if (row.Operation.Status is OperationStatus.Ready
+                             or OperationStatus.Cancelled or OperationStatus.NotProcessed)
+                        row.MarkNotProcessed();
+                }
+
+                AddFailureErrorsFromRows();
+                UpdateFinalCountersFromRows(selectedRows);
+                if (SelectedOutputMode == OutputMode.Zip && FinalSucceeded > 0)
+                {
+                    try
+                    {
+                        var partialSummary = CreateCompletedSummary(selectedRows);
+                        var zipResult = await new ResultZipPublisher().PublishAsync(
+                            _zipStagingRoot,
+                            NormalizePathInput(OutputPath),
+                            partialSummary,
+                            CancellationToken.None);
+                        if (!zipResult.Created)
+                            AddError("Не удалось безопасно сохранить завершённые результаты в ZIP.");
+                    }
+                    catch (Exception exception) when (exception is IOException
+                                                       or InvalidDataException
+                                                       or UnauthorizedAccessException)
+                    {
+                        AddError("Не удалось безопасно сохранить завершённые результаты в ZIP.");
+                    }
+                }
+
+                ResultFolder = SelectedOutputMode == OutputMode.Folder
+                    ? NormalizePathInput(OutputPath)
+                    : File.Exists(NormalizePathInput(OutputPath))
+                        ? NormalizePathInput(OutputPath)
+                        : string.Empty;
+                FinalReportTitle = "Остановлено пользователем";
+                HasFinalReport = true;
+                StateMessage = "Остановлено пользователем";
+                UpdatePreviewSummary();
+                OnPropertyChanged(nameof(VisibleOperations));
+            }
+            else
+            {
+                RebuildPreview();
+                StateMessage = "Обработка отменена. Preview обновлён.";
+                throw;
+            }
         }
         finally
         {
@@ -711,12 +827,61 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 TryDeleteZipStaging();
             }
             IsConverting = false;
+            IsStopping = false;
             CurrentFile = string.Empty;
+            _conversionCancellation?.Dispose();
+            _conversionCancellation = null;
         }
     }
 
+    public bool StopConversion()
+    {
+        if (!IsConverting || IsStopping || _conversionCancellation is null)
+            return false;
+
+        IsStopping = true;
+        StateMessage = "Останавливаем…";
+        _conversionCancellation.Cancel();
+        return true;
+    }
+
+    public string BuildConversionList()
+    {
+        var lines = Operations
+            .Where(row => row.IsSelected
+                          && row.CanSelect
+                          && row.Operation.Target is not ConversionTarget.Copy
+                              and not ConversionTarget.Skip
+                          && (row.Operation.Status is OperationStatus.Ready
+                              or OperationStatus.Cancelled or OperationStatus.NotProcessed))
+            .Select(row => $"{NormalizeCopyPath(row.FilePath)} → {NormalizeCopyPath(row.ResultPath)}")
+            .ToArray();
+        if (lines.Length == 0)
+        {
+            CopyListStatus = "Нет выбранных файлов для преобразования";
+            return string.Empty;
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    public void ConfirmConversionListCopied()
+    {
+        var count = BuildConversionList().Split(
+            Environment.NewLine,
+            StringSplitOptions.RemoveEmptyEntries).Length;
+        if (count > 0)
+            CopyListStatus = $"Скопировано {count} {GetRussianFileWord(count)}";
+    }
+
+    private static string NormalizeCopyPath(string path) =>
+        path.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
+
     public void AddError(string message)
     {
+        if (ErrorMessages.Contains(message, StringComparer.Ordinal))
+            return;
+
         ErrorMessages.Add(message);
         OnPropertyChanged(nameof(HasErrors));
     }
@@ -817,7 +982,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         FoundCount = Operations.Count;
         ReadyCount = Operations.Count(row => row.Operation.Status is
-            OperationStatus.Ready or OperationStatus.Converting);
+            OperationStatus.Ready or OperationStatus.Converting
+            or OperationStatus.Cancelled or OperationStatus.NotProcessed);
         SelectedReadyCount = Operations.Count(row => row.CanSelect && row.IsSelected);
         SkippedCount = Operations.Count(row => row.Operation.Status == OperationStatus.Skipped);
         UnavailableCount = Operations.Count(row => row.Operation.Status is
@@ -836,9 +1002,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _progressTotal = progress.Total;
         OnPropertyChanged(nameof(ProgressCountText));
         CurrentFile = progress.RelativePath;
-        ProgressPercent = progress.Total == 0
+        var reportedPercent = progress.Total == 0
             ? 0
-            : Math.Clamp(progress.Completed * 100d / progress.Total, 0, 100);
+            : Math.Clamp(
+                (progress.Completed + (progress.Status is OperationStatus.Converting
+                    or OperationStatus.Cancelled
+                    ? (progress.OperationPercent ?? 0) / 100d
+                    : 0)) * 100d / progress.Total,
+                0,
+                100);
+        ProgressPercent = Math.Max(ProgressPercent, reportedPercent);
         RefreshConversionTiming();
 
         var index = -1;
@@ -846,7 +1019,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             var operation = Operations[position].Operation;
             if (operation.RelativePath == progress.RelativePath
-                && operation.Status is OperationStatus.Ready or OperationStatus.Converting)
+                && operation.Status is OperationStatus.Ready or OperationStatus.Converting
+                    or OperationStatus.Cancelled or OperationStatus.NotProcessed)
             {
                 index = position;
                 break;
@@ -858,26 +1032,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return;
         }
 
-        var currentOperation = Operations[index].Operation;
+        var row = Operations[index];
         if (progress.Status == OperationStatus.Converting)
         {
-            var converting = currentOperation with
-            {
-                Status = OperationStatus.Converting,
-                Message = "Преобразование..."
-            };
-            Operations[index] = new OperationRowViewModel(converting);
+            row.BeginExecution(_timeProvider.GetTimestamp(), progress.OperationPercent ?? 10);
         }
         else if (progress.Result is not null)
         {
-            var completed = progress.Result.Operation with
-            {
-                Status = progress.Result.Status,
-                Message = progress.Result.Message
-            };
-            Operations[index] = new OperationRowViewModel(
-                completed,
-                progress.Result with { Operation = completed });
+            row.CompleteExecution(progress.Result, _timeProvider, _timeProvider.GetTimestamp());
         }
 
         UpdatePreviewSummary();
@@ -890,7 +1052,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             PreviewFilter.All => true,
             PreviewFilter.Convert => row.Operation.Status is OperationStatus.Ready
                 or OperationStatus.Converting
-                or OperationStatus.Succeeded,
+                or OperationStatus.Succeeded
+                or OperationStatus.Cancelled
+                or OperationStatus.NotProcessed,
             PreviewFilter.Skip => row.Operation.Status == OperationStatus.Skipped,
             PreviewFilter.Unavailable => row.Operation.Status is
                 OperationStatus.EngineUnavailable or OperationStatus.Unsupported,
@@ -926,12 +1090,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ConflictCount = 0;
         ErrorCount = 0;
         HasFinalReport = false;
-        FinalSucceeded = 0;
-        FinalFailed = 0;
-        FinalConflicts = 0;
-        FinalUnavailable = 0;
-        FinalSkipped = 0;
-        FinalNotSelected = 0;
+        CopyListStatus = string.Empty;
+        ResetFinalCounters();
         _progressCompleted = 0;
         _progressTotal = 0;
         ProgressPercent = 0;
@@ -954,6 +1114,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         var elapsed = GetConversionElapsed();
+        var now = _timeProvider.GetTimestamp();
+        foreach (var row in Operations)
+            row.RefreshExecutionTime(_timeProvider, now);
         ElapsedTimeText = $"Прошло: {FormatDuration(elapsed)}";
         if (_progressTotal <= 0 || _progressCompleted <= 0)
         {
@@ -1030,12 +1193,71 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return $"{result.Operation.RelativePath}: {result.Message}{diagnostic}";
     }
 
+    private void AddFailureErrorsFromRows()
+    {
+        foreach (var result in Operations
+                     .Where(row => row.Operation.Status == OperationStatus.Failed)
+                     .Select(row => row.Result)
+                     .OfType<ConversionResult>()
+                     .Where(result => result.Status == OperationStatus.Failed))
+        {
+            AddError(FormatConversionError(result));
+        }
+    }
+
+    private void ResetFinalCounters()
+    {
+        FinalConverted = 0;
+        FinalCopied = 0;
+        FinalFailed = 0;
+        FinalConflicts = 0;
+        FinalUnavailable = 0;
+        FinalSkipped = 0;
+        FinalNotSelected = 0;
+    }
+
+    private void UpdateFinalCountersFromRows(IReadOnlyList<OperationRowViewModel> selectedRows)
+    {
+        var selectedPaths = selectedRows.Select(row => row.SourcePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        FinalConverted = Operations.Count(row => selectedPaths.Contains(row.SourcePath)
+                                                 && row.Operation.Status == OperationStatus.Succeeded
+                                                 && row.Operation.Target != ConversionTarget.Copy);
+        FinalCopied = Operations.Count(row => selectedPaths.Contains(row.SourcePath)
+                                              && row.Operation.Status == OperationStatus.Succeeded
+                                              && row.Operation.Target == ConversionTarget.Copy);
+        FinalFailed = Operations.Count(row => row.Operation.Status == OperationStatus.Failed);
+        FinalConflicts = Operations.Count(row => row.Operation.Status == OperationStatus.Conflict);
+        FinalUnavailable = Operations.Count(row => row.Operation.Status is
+            OperationStatus.EngineUnavailable or OperationStatus.Unsupported);
+        FinalSkipped = Operations.Count(row => row.Operation.Status == OperationStatus.Skipped);
+        FinalNotSelected = Operations.Count(row => row.Status == "Не выбрано");
+    }
+
+    private ConversionSummary CreateCompletedSummary(
+        IReadOnlyList<OperationRowViewModel> selectedRows)
+    {
+        var selectedPaths = selectedRows.Select(row => row.SourcePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var results = Operations
+            .Where(row => selectedPaths.Contains(row.SourcePath)
+                          && row.Operation.Status == OperationStatus.Succeeded)
+            .Select(row => new ConversionResult(
+                row.Operation,
+                OperationStatus.Succeeded,
+                row.Operation.Message))
+            .ToArray();
+        return new ConversionSummary(results.Length, 0, 0, 0, 0, 0, results);
+    }
+
     private void NotifyAvailability()
     {
         OnPropertyChanged(nameof(IsBusy));
         OnPropertyChanged(nameof(CanScan));
         OnPropertyChanged(nameof(CanConvert));
         OnPropertyChanged(nameof(CanChangeSettings));
+        OnPropertyChanged(nameof(CanStop));
+        OnPropertyChanged(nameof(CanCopyConversionList));
     }
 
     private string GetOfficeStatus(OfficeApplicationKind application) =>

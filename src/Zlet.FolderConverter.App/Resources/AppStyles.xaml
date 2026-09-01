@@ -12,7 +12,10 @@
     <SolidColorBrush x:Key="NeutralStatusBrush" Color="#38465C" />
     <SolidColorBrush x:Key="WarningStatusBrush" Color="#8A5C18" />
     <SolidColorBrush x:Key="DangerStatusBrush" Color="#8E3040" />
-    <SolidColorBrush x:Key="PositiveStatusBrush" Color="#155E64" />
+    <SolidColorBrush x:Key="SuccessStatusBrush" Color="#176447" />
+    <SolidColorBrush x:Key="InProgressStatusBrush" Color="#235A82" />
+    <SolidColorBrush x:Key="ReadyStatusBrush" Color="#4C456F" />
+    <SolidColorBrush x:Key="CancelledStatusBrush" Color="#5A4655" />
 
     <local:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter"
         xmlns:local="clr-namespace:Zlet.FolderConverter.App" />

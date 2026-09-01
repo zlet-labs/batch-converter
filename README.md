@@ -1,4 +1,4 @@
-# Zlet Batch Converter v0.0.1
+# Zlet Batch Converter v0.0.2
 
 Zlet Batch Converter is a local Windows desktop prototype for processing files
 in a folder while preserving relative subfolder paths. Files are not uploaded.
@@ -62,6 +62,7 @@ application being tested:
 ```powershell
 $env:ZLET_OFFICE_INTEGRATION = "1"
 $env:ZLET_OFFICE_WORD_FIXTURE = "C:\fixtures\sample.doc"
+$env:ZLET_OFFICE_WORD_BATCH_FIXTURE_DIR = "C:\fixtures\word-batch"
 $env:ZLET_OFFICE_EXCEL_FIXTURE = "C:\fixtures\sample.xls"
 $env:ZLET_OFFICE_POWERPOINT_FIXTURE = "C:\fixtures\sample.ppt"
 dotnet test FolderConverter.sln -c Release --filter Category=OfficeIntegration
@@ -79,7 +80,7 @@ fixture is absent.
 The script publishes Windows x64, self-contained .NET 8 application and worker
 files, then creates:
 
-`artifacts/portable/win-x64/ZletBatchConverter-v0.0.1-win-x64.zip`
+`artifacts/portable/win-x64/ZletBatchConverter-v0.0.2-win-x64.zip`
 
 The package contains neither Microsoft Office nor conversion runtimes such as
 Python or Java. Do not publish a GitHub Release before separate review and

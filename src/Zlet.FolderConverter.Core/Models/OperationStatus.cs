@@ -9,5 +9,7 @@ public enum OperationStatus
     Conflict,
     Failed,
     EngineUnavailable,
-    Unsupported
+    Unsupported,
+    Cancelled,
+    NotProcessed
 }

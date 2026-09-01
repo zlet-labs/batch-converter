@@ -17,13 +17,13 @@ public sealed class PresentationTests : IDisposable
 
     [Theory]
     [InlineData(OperationStatus.Ready, "Готово к преобразованию")]
-    [InlineData(OperationStatus.Skipped, "Пропущен")]
+    [InlineData(OperationStatus.Skipped, "Пропущено")]
     [InlineData(OperationStatus.Converting, "В процессе")]
     [InlineData(OperationStatus.Succeeded, "Преобразовано")]
-    [InlineData(OperationStatus.Conflict, "Файл результата уже существует")]
+    [InlineData(OperationStatus.Conflict, "Конфликт")]
     [InlineData(OperationStatus.Failed, "Ошибка")]
-    [InlineData(OperationStatus.EngineUnavailable, "Требуется Microsoft Office")]
-    [InlineData(OperationStatus.Unsupported, "Не поддерживается")]
+    [InlineData(OperationStatus.EngineUnavailable, "Недоступно")]
+    [InlineData(OperationStatus.Unsupported, "Недоступно")]
     public void OperationRowViewModel_localizes_statuses(
         OperationStatus status,
         string expected)
@@ -56,7 +56,7 @@ public sealed class PresentationTests : IDisposable
 
         var row = new OperationRowViewModel(operation, result);
 
-        Assert.Equal(message, row.Status);
+        Assert.Equal($"Ошибка: {message}", row.Status);
         Assert.Equal(message, row.Message);
     }
 
@@ -85,7 +85,7 @@ public sealed class PresentationTests : IDisposable
 
         var row = new OperationRowViewModel(operation, result);
 
-        Assert.Equal(message, row.Status);
+        Assert.Equal($"Ошибка: {message}", row.Status);
         Assert.Equal(message, row.Message);
     }
 
@@ -311,7 +311,7 @@ public sealed class PresentationTests : IDisposable
         Assert.Equal(0, viewModel.FinalFailed);
         Assert.Equal(0, viewModel.FinalUnavailable);
         Assert.Equal(1, viewModel.FinalSkipped);
-        Assert.Equal("Преобразовано", viewModel.Operations.Single(row =>
+        Assert.Equal("Преобразовано · 100%", viewModel.Operations.Single(row =>
             row.Operation.SourceFormat == SourceFormat.Json).Status);
         Assert.True(File.Exists(Path.Combine(_rootPath, "_converted", "users.txt")));
         Assert.Equal(source, File.ReadAllText(Path.Combine(_rootPath, "users.json")));
@@ -739,7 +739,7 @@ public sealed class PresentationTests : IDisposable
         viewModel.OutputPath = manualFolder;
 
         viewModel.SelectedOutputMode = OutputMode.Zip;
-        Assert.EndsWith("ZletBatchConverter-v0.0.1-results.zip", viewModel.OutputPath);
+        Assert.EndsWith("ZletBatchConverter-v0.0.2-results.zip", viewModel.OutputPath);
         var manualZip = Path.Combine(_rootPath, "manual.zip");
         viewModel.OutputPath = manualZip;
 

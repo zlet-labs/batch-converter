@@ -12,7 +12,7 @@ public static class ProductIdentity
 
     public static string Version =>
         (Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-             ?.InformationalVersion ?? "0.0.1")
+             ?.InformationalVersion ?? "0.0.2")
         .Split('+')[0];
 
     public static string ResultZipFileName =>

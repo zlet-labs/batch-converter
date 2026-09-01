@@ -1,6 +1,6 @@
 # Microsoft Office COM conversion notes
 
-Zlet Batch Converter v0.0.1 uses late-bound Microsoft Office COM automation.
+Zlet Batch Converter v0.0.2 uses late-bound Microsoft Office COM automation.
 No `Microsoft.Office.Interop.*` package is referenced.
 
 ## Process boundary

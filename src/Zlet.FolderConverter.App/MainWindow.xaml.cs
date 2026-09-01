@@ -88,6 +88,23 @@ public partial class MainWindow : Window
     private void InvertSelectionButton_Click(object sender, RoutedEventArgs e) =>
         _viewModel.InvertSelection();
 
+    private void CopyConversionListButton_Click(object sender, RoutedEventArgs e)
+    {
+        var text = _viewModel.BuildConversionList();
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        try
+        {
+            System.Windows.Clipboard.SetText(text);
+            _viewModel.ConfirmConversionListCopied();
+        }
+        catch
+        {
+            _viewModel.AddError("Не удалось скопировать список в буфер обмена.");
+        }
+    }
+
     private void CopyFolderButton_Click(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanCopySelectedFolder)
@@ -121,6 +138,9 @@ public partial class MainWindow : Window
             _viewModel.StateMessage = "Обработка завершилась ошибкой.";
         }
     }
+
+    private void StopButton_Click(object sender, RoutedEventArgs e) =>
+        _viewModel.StopConversion();
 
     private void ChooseOutputButton_Click(object sender, RoutedEventArgs e)
     {

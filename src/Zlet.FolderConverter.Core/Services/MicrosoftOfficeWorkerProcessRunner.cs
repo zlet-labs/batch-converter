@@ -262,14 +262,16 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
                     SessionInvalid: true);
             }
 
-            if (message?.MessageType == OfficeWorkerMessageType.Started
-                && message.OfficeProcessOwned
-                && message.OfficeProcessId is > 0
-                && message.OfficeProcessStartTimeUtcTicks is > 0)
+            if (message?.MessageType == OfficeWorkerMessageType.Started)
             {
-                session.Ownership = new OfficeProcessOwnership(
-                    message.OfficeProcessId.Value,
-                    message.OfficeProcessStartTimeUtcTicks.Value);
+                if (message.OfficeProcessOwned
+                    && message.OfficeProcessId is > 0
+                    && message.OfficeProcessStartTimeUtcTicks is > 0)
+                {
+                    session.Ownership = new OfficeProcessOwnership(
+                        message.OfficeProcessId.Value,
+                        message.OfficeProcessStartTimeUtcTicks.Value);
+                }
             }
             else if (message?.MessageType == OfficeWorkerMessageType.Result)
             {
@@ -315,20 +317,23 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
 
         if (force)
         {
+            // The worker is always app-owned. Stop it first so cancellation and timeout
+            // cannot be extended by a slow Office ownership handshake. Any Started
+            // message already buffered by the worker is drained below and may prove
+            // exact PID/start-time ownership; without that proof Office is untouched.
             session.Process.Kill();
         }
 
-        if (responseTask is not null)
+        var drainTasks = new List<Task>
         {
-            await Task.WhenAny(
-                IgnoreFailureAsync(responseTask),
-                Task.Delay(_options.ShutdownTimeout));
-        }
+            IgnoreFailureAsync(session.WaitTask),
+            IgnoreFailureAsync(session.ErrorTask)
+        };
+        if (responseTask is not null)
+            drainTasks.Add(IgnoreFailureAsync(responseTask));
 
         await Task.WhenAny(
-            Task.WhenAll(
-                IgnoreFailureAsync(session.WaitTask),
-                IgnoreFailureAsync(session.ErrorTask)),
+            Task.WhenAll(drainTasks),
             Task.Delay(_options.ShutdownTimeout));
 
         if (force && session.Ownership is not null)
@@ -356,7 +361,6 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
         private RequestDiagnostics? _activeDiagnostics;
         private bool _pendingStandardError;
         private bool _hasStartedRequest;
-
         public WorkerSession(
             OfficeApplicationKind application,
             IOfficeWorkerProcess process)
@@ -372,7 +376,6 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
         public Task WaitTask { get; }
         public Task ErrorTask { get; }
         public OfficeProcessOwnership? Ownership { get; set; }
-
         public RequestDiagnostics BeginRequest()
         {
             lock (_diagnosticGate)

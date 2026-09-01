@@ -118,6 +118,29 @@ public sealed class MicrosoftOfficeConversionAdapterTests : IDisposable
     }
 
     [Fact]
+    public async Task Powerpoint_ownership_loss_explains_user_content_was_protected()
+    {
+        var sourcePath = Path.Combine(_rootPath, "ownership-lost.ppt");
+        await File.WriteAllTextAsync(sourcePath, "legacy fixture");
+        var adapter = new MicrosoftOfficeConversionAdapter(
+            OfficeApplicationKind.PowerPoint,
+            new MicrosoftOfficeCapabilityTests.FakeCapabilityDetector(
+                [OfficeApplicationKind.PowerPoint]),
+            new ErrorWorkerRunner("powerpoint_session_ownership_lost"),
+            new OutputResultValidator());
+        var operation = CreateOperation(
+            sourcePath,
+            SourceFormat.Ppt,
+            ConversionTarget.Pptx);
+
+        var result = await adapter.ConvertAsync(operation, CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Failed, result.Status);
+        Assert.Equal("powerpoint_session_ownership_lost", result.Diagnostic?.ErrorCode);
+        Assert.Contains("не закрыть пользовательскую презентацию", result.Message);
+    }
+
+    [Fact]
     public async Task Worker_failure_removes_partial_temporary_output_and_preserves_source()
     {
         var sourcePath = Path.Combine(_rootPath, "partial.doc");

@@ -184,6 +184,57 @@ public sealed class ComOfficeAutomationTests
         Assert.Equal(2, events.Count(item => item == "cleanup"));
     }
 
+    [Fact]
+    public void User_powerpoint_content_appearing_between_files_is_never_quit()
+    {
+        var events = new List<string>();
+        var factory = new FakeSessionFactory(events)
+        {
+            HasOpenDocuments = true
+        };
+        var automation = new ComOfficeAutomation(
+            factory,
+            new FakeProcessIdentity(events));
+
+        var first = automation.ConvertPowerPoint(
+            Request(OfficeApplicationKind.PowerPoint),
+            _ => { });
+        var second = automation.ConvertPowerPoint(
+            Request(OfficeApplicationKind.PowerPoint),
+            _ => { });
+        automation.Dispose();
+
+        Assert.True(first.Success);
+        Assert.False(second.Success);
+        Assert.Equal("powerpoint_session_ownership_lost", second.ErrorCode);
+        Assert.True(second.SessionInvalid);
+        Assert.True(second.AbandonOfficeProcessOwnership);
+        Assert.Equal(1, events.Count(item => item == "open_and_save"));
+        Assert.Contains("abandon", events);
+        Assert.DoesNotContain("cleanup", events);
+    }
+
+    [Fact]
+    public void Batch_cleanup_never_quits_powerpoint_after_user_content_appears()
+    {
+        var events = new List<string>();
+        var automation = new ComOfficeAutomation(
+            new FakeSessionFactory(events)
+            {
+                HasOpenDocuments = true
+            },
+            new FakeProcessIdentity(events));
+
+        var result = automation.ConvertPowerPoint(
+            Request(OfficeApplicationKind.PowerPoint),
+            _ => { });
+        automation.Dispose();
+
+        Assert.True(result.Success);
+        Assert.Contains("abandon", events);
+        Assert.DoesNotContain("cleanup", events);
+    }
+
     [Theory]
     [InlineData(OfficeApplicationKind.Word)]
     [InlineData(OfficeApplicationKind.Excel)]
@@ -310,6 +361,7 @@ public sealed class ComOfficeAutomationTests
         public bool ThrowDuringConfigure { get; init; }
         public bool ThrowDuringCleanup { get; init; }
         public int OpenFailuresRemaining { get; set; }
+        public bool HasOpenDocuments { get; init; }
 
         public IOfficeAutomationSession Create(OfficeApplicationKind application)
         {
@@ -319,7 +371,8 @@ public sealed class ComOfficeAutomationTests
                 events,
                 ThrowDuringConfigure,
                 ThrowDuringCleanup,
-                OpenFailuresRemaining-- > 0);
+                OpenFailuresRemaining-- > 0,
+                HasOpenDocuments);
         }
     }
 
@@ -327,7 +380,8 @@ public sealed class ComOfficeAutomationTests
         List<string> events,
         bool throwDuringConfigure,
         bool throwDuringCleanup,
-        bool throwDuringOpen)
+        bool throwDuringOpen,
+        bool hasOpenDocuments)
         : IOfficeAutomationSession
     {
         public long WindowHandle
@@ -361,6 +415,15 @@ public sealed class ComOfficeAutomationTests
             }
         }
 
+        public bool HasOpenDocuments
+        {
+            get
+            {
+                events.Add("has_open_documents");
+                return hasOpenDocuments;
+            }
+        }
+
         public void Cleanup()
         {
             events.Add("cleanup");
@@ -369,6 +432,8 @@ public sealed class ComOfficeAutomationTests
                 throw new COMException("Synthetic cleanup failure.");
             }
         }
+
+        public void Abandon() => events.Add("abandon");
     }
 
     private sealed class FakeProcessIdentity(
@@ -376,13 +441,25 @@ public sealed class ComOfficeAutomationTests
         bool powerPointAlreadyRunning = false)
         : IOfficeProcessIdentityProvider
     {
+        private int _powerPointCaptureCount;
+
         public IReadOnlySet<int> Capture(OfficeApplicationKind application)
         {
             events.Add($"capture:{application}");
-            return application == OfficeApplicationKind.PowerPoint
-                   && powerPointAlreadyRunning
-                ? new HashSet<int> { 42 }
-                : new HashSet<int>();
+            if (application != OfficeApplicationKind.PowerPoint)
+            {
+                return new HashSet<int>();
+            }
+
+            _powerPointCaptureCount++;
+            if (powerPointAlreadyRunning)
+            {
+                return new HashSet<int> { 42 };
+            }
+
+            return _powerPointCaptureCount == 1
+                ? new HashSet<int>()
+                : new HashSet<int> { 4242 };
         }
 
         public OfficeWorkerMessage CreateStartedMessage(

@@ -97,6 +97,32 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Cancellation_after_office_start_captures_and_terminates_owned_process()
+    {
+        var ownership = new OfficeProcessOwnership(
+            4242,
+            638900000000000000);
+        using var cancellation = new CancellationTokenSource();
+        var process = new OwnershipDuringWriteProcess(
+            StartedLine(ownership, owned: true),
+            cancellation);
+        var terminator = new RecordingOfficeTerminator();
+        var runner = CreateRunner(
+            new FakeLauncher(process),
+            terminator,
+            timeout: TimeSpan.FromSeconds(10));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            runner.RunAsync(
+                Request(OfficeApplicationKind.Word),
+                cancellation.Token));
+
+        Assert.True(process.KillCalled);
+        Assert.Equal(OfficeApplicationKind.Word, terminator.Application);
+        Assert.Equal(ownership, terminator.Ownership);
+    }
+
+    [Fact]
     public async Task Batch_reuses_one_worker_for_multiple_sequential_requests()
     {
         var process = new ScriptedWorkerProcess(
@@ -165,6 +191,108 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
         Assert.True(second.Success);
         Assert.Equal(2, launcher.StartCount);
         Assert.False(recovered.KillCalled);
+    }
+
+    [Fact]
+    public async Task Abandoned_powerpoint_ownership_is_never_terminated()
+    {
+        var ownership = new OfficeProcessOwnership(
+            4242,
+            638900000000000000);
+        var process = new ScriptedWorkerProcess(
+            StartedLine(ownership, owned: true),
+            ResultLine(
+                success: false,
+                errorCode: "powerpoint_session_ownership_lost",
+                sessionInvalid: true,
+                abandonOwnership: true));
+        var terminator = new RecordingOfficeTerminator();
+        var runner = CreateRunner(
+            new SequenceLauncher(process),
+            terminator);
+
+        await runner.BeginBatchAsync(CancellationToken.None);
+        var result = await runner.RunAsync(
+            Request(OfficeApplicationKind.PowerPoint),
+            CancellationToken.None);
+        await runner.EndBatchAsync();
+
+        Assert.False(result.Success);
+        Assert.True(process.KillCalled);
+        Assert.False(terminator.WasCalled);
+    }
+
+    [Fact]
+    public async Task Second_request_without_stdout_does_not_inherit_first_output()
+    {
+        var process = new ScriptedWorkerProcess(ResultLine(success: true));
+        var runner = CreateRunner(
+            new SequenceLauncher(process),
+            new RecordingOfficeTerminator());
+
+        await runner.BeginBatchAsync(CancellationToken.None);
+        var first = await runner.RunAsync(Request(OfficeApplicationKind.Word), CancellationToken.None);
+        var second = await runner.RunAsync(Request(OfficeApplicationKind.Word), CancellationToken.None);
+        await runner.EndBatchAsync();
+
+        Assert.True(first.HasStandardOutput);
+        Assert.False(second.HasStandardOutput);
+        Assert.Equal("worker_result_missing", second.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Standard_error_is_attributed_only_to_second_request()
+    {
+        var error = new DeferredDiagnosticReader("second request error");
+        var output = new CoordinatedResultReader(
+            ResultLine(success: true),
+            ResultLine(success: true),
+            error.LineConsumed);
+        var process = new ScriptedWorkerProcess(
+            output,
+            error,
+            requestCount =>
+            {
+                if (requestCount == 2)
+                {
+                    error.ReleaseLine();
+                }
+            });
+        var runner = CreateRunner(
+            new SequenceLauncher(process),
+            new RecordingOfficeTerminator());
+
+        await runner.BeginBatchAsync(CancellationToken.None);
+        var first = await runner.RunAsync(Request(OfficeApplicationKind.Word), CancellationToken.None);
+        var second = await runner.RunAsync(Request(OfficeApplicationKind.Word), CancellationToken.None);
+        await runner.EndBatchAsync();
+
+        Assert.False(first.HasStandardError);
+        Assert.True(second.HasStandardError);
+    }
+
+    [Fact]
+    public async Task Second_request_timeout_does_not_inherit_first_diagnostics()
+    {
+        var output = new FirstResultThenBlockReader(ResultLine(success: true));
+        var process = new ScriptedWorkerProcess(
+            output,
+            new StringReader("first request error"));
+        var runner = CreateRunner(
+            new SequenceLauncher(process),
+            new RecordingOfficeTerminator(),
+            timeout: TimeSpan.FromMilliseconds(30));
+
+        await runner.BeginBatchAsync(CancellationToken.None);
+        var first = await runner.RunAsync(Request(OfficeApplicationKind.Word), CancellationToken.None);
+        var second = await runner.RunAsync(Request(OfficeApplicationKind.Word), CancellationToken.None);
+        await runner.EndBatchAsync();
+
+        Assert.True(first.HasStandardOutput);
+        Assert.True(first.HasStandardError);
+        Assert.True(second.TimedOut);
+        Assert.False(second.HasStandardOutput);
+        Assert.False(second.HasStandardError);
     }
 
     [Fact]
@@ -318,13 +446,15 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
     private static string ResultLine(
         bool success,
         string errorCode = "",
-        bool sessionInvalid = false) =>
+        bool sessionInvalid = false,
+        bool abandonOwnership = false) =>
         JsonSerializer.Serialize(
             new OfficeWorkerMessage(
                 OfficeWorkerMessageType.Result,
                 success,
                 errorCode,
-                SessionInvalid: sessionInvalid),
+                SessionInvalid: sessionInvalid,
+                AbandonOfficeProcessOwnership: abandonOwnership),
             JsonOptions);
 
     private sealed class FakeLauncher(IOfficeWorkerProcess process)
@@ -359,14 +489,31 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
         private readonly TrackingWriter _input;
 
         public ScriptedWorkerProcess(params string[] lines)
+            : this(
+                new StringReader(string.Join(Environment.NewLine, lines)),
+                new StringReader(string.Empty))
         {
-            StandardOutput = new StringReader(string.Join(Environment.NewLine, lines));
-            _input = new TrackingWriter(() => _exit.TrySetResult());
+        }
+
+        public ScriptedWorkerProcess(
+            TextReader standardOutput,
+            TextReader standardError,
+            Action<int>? requestWritten = null)
+        {
+            StandardOutput = standardOutput;
+            StandardError = standardError;
+            _input = new TrackingWriter(
+                () =>
+                {
+                    ReleaseReaders();
+                    _exit.TrySetResult();
+                },
+                requestWritten);
         }
 
         public TextWriter StandardInput => _input;
         public TextReader StandardOutput { get; }
-        public TextReader StandardError { get; } = new StringReader(string.Empty);
+        public TextReader StandardError { get; }
         public int ExitCode => 0;
         public bool KillCalled { get; private set; }
         public bool InputClosed => _input.IsClosed;
@@ -378,6 +525,7 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
         public void Kill()
         {
             KillCalled = true;
+            ReleaseReaders();
             _exit.TrySetResult();
         }
 
@@ -385,7 +533,15 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
         {
         }
 
-        private sealed class TrackingWriter(Action onClose) : StringWriter
+        private void ReleaseReaders()
+        {
+            (StandardOutput as IReleaseOnShutdown)?.Release();
+            (StandardError as IReleaseOnShutdown)?.Release();
+        }
+
+        private sealed class TrackingWriter(
+            Action onClose,
+            Action<int>? requestWritten) : StringWriter
         {
             public bool IsClosed { get; private set; }
             public int RequestCount => ToString()
@@ -397,6 +553,144 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
                 IsClosed = true;
                 onClose();
                 base.Close();
+            }
+
+            public override async Task WriteLineAsync(
+                ReadOnlyMemory<char> buffer,
+                CancellationToken cancellationToken = default)
+            {
+                await base.WriteLineAsync(buffer, cancellationToken);
+                requestWritten?.Invoke(RequestCount);
+            }
+        }
+    }
+
+    private interface IReleaseOnShutdown
+    {
+        void Release();
+    }
+
+    private sealed class FirstResultThenBlockReader(string firstLine)
+        : TextReader, IReleaseOnShutdown
+    {
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _readCount;
+
+        public override async Task<string?> ReadLineAsync()
+        {
+            if (Interlocked.Increment(ref _readCount) == 1)
+            {
+                return firstLine;
+            }
+
+            await _release.Task;
+            return null;
+        }
+
+        public void Release() => _release.TrySetResult();
+    }
+
+    private sealed class DeferredDiagnosticReader(string line)
+        : TextReader, IReleaseOnShutdown
+    {
+        private readonly TaskCompletionSource _lineRelease =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _shutdown =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _lineConsumed =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private bool _lineRead;
+
+        public Task LineConsumed => _lineConsumed.Task;
+
+        public void ReleaseLine() => _lineRelease.TrySetResult();
+
+        public override async Task<string?> ReadLineAsync()
+        {
+            if (!_lineRead)
+            {
+                await _lineRelease.Task;
+                _lineRead = true;
+                _lineConsumed.TrySetResult();
+                return line;
+            }
+
+            await _shutdown.Task;
+            return null;
+        }
+
+        public void Release() => _shutdown.TrySetResult();
+    }
+
+    private sealed class CoordinatedResultReader(
+        string firstLine,
+        string secondLine,
+        Task secondRelease) : TextReader, IReleaseOnShutdown
+    {
+        private readonly TaskCompletionSource _shutdown =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _readCount;
+
+        public override async Task<string?> ReadLineAsync()
+        {
+            var readCount = Interlocked.Increment(ref _readCount);
+            if (readCount == 1)
+            {
+                return firstLine;
+            }
+
+            if (readCount == 2)
+            {
+                await secondRelease;
+                await Task.Delay(10);
+                return secondLine;
+            }
+
+            await _shutdown.Task;
+            return null;
+        }
+
+        public void Release() => _shutdown.TrySetResult();
+    }
+
+    private sealed class OwnershipDuringWriteProcess(
+        string startedLine,
+        CancellationTokenSource cancellation) : IOfficeWorkerProcess
+    {
+        private readonly DeferredTextReader _output = new(startedLine);
+        private readonly TaskCompletionSource _exit =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TextWriter StandardInput { get; } =
+            new CancellingWriter(cancellation);
+        public TextReader StandardOutput => _output;
+        public TextReader StandardError { get; } = new StringReader(string.Empty);
+        public int ExitCode => 0;
+        public bool KillCalled { get; private set; }
+
+        public Task WaitForExitAsync(CancellationToken cancellationToken) => _exit.Task;
+
+        public void Kill()
+        {
+            KillCalled = true;
+            _output.Release();
+            _exit.TrySetResult();
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CancellingWriter(
+            CancellationTokenSource cancellation) : StringWriter
+        {
+            public override Task WriteLineAsync(
+                ReadOnlyMemory<char> buffer,
+                CancellationToken cancellationToken = default)
+            {
+                cancellation.Cancel();
+                throw new OperationCanceledException(cancellation.Token);
             }
         }
     }

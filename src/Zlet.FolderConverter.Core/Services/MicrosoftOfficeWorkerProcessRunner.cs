@@ -129,94 +129,116 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
         OfficeWorkerRequest request,
         CancellationToken cancellationToken)
     {
-        Task<OfficeWorkerMessage?> responseTask;
+        var diagnostics = session.BeginRequest();
+        var responseTask = ReadResponseAsync(session, diagnostics);
         try
         {
-            var requestJson = JsonSerializer.Serialize(request, JsonOptions);
-            await session.Process.StandardInput.WriteLineAsync(
-                requestJson.AsMemory(),
-                cancellationToken);
-            await session.Process.StandardInput.FlushAsync(cancellationToken);
-            responseTask = ReadResponseAsync(session);
-        }
-        catch (OperationCanceledException)
-        {
-            await ShutdownSessionAsync(force: true);
-            throw;
-        }
-        catch (Exception exception) when (exception is IOException
-                                           or InvalidOperationException
-                                           or ObjectDisposedException)
-        {
-            await ShutdownSessionAsync(force: true);
-            return new(false, "worker_protocol_failure", SessionInvalid: true);
-        }
-
-        var delayTask = Task.Delay(_options.Timeout, cancellationToken);
-        var completed = await Task.WhenAny(responseTask, delayTask);
-        if (completed != responseTask)
-        {
-            await ShutdownSessionAsync(force: true, responseTask);
-            if (cancellationToken.IsCancellationRequested)
+            try
             {
-                throw new OperationCanceledException(cancellationToken);
+                var requestJson = JsonSerializer.Serialize(request, JsonOptions);
+                await session.Process.StandardInput.WriteLineAsync(
+                    requestJson.AsMemory(),
+                    cancellationToken);
+                await session.Process.StandardInput.FlushAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                await ShutdownSessionAsync(force: true, responseTask);
+                throw;
+            }
+            catch (Exception exception) when (exception is IOException
+                                               or InvalidOperationException
+                                               or ObjectDisposedException)
+            {
+                await ShutdownSessionAsync(force: true, responseTask);
+                return new(
+                    false,
+                    "worker_protocol_failure",
+                    HasStandardOutput: diagnostics.HasOutput,
+                    HasStandardError: diagnostics.HasStandardError,
+                    SessionInvalid: true);
             }
 
-            return new(
-                false,
-                "worker_timeout",
-                TimedOut: true,
-                HasStandardOutput: session.HasOutput,
-                HasStandardError: session.HasStandardError,
-                SessionInvalid: true);
-        }
+            var delayTask = Task.Delay(_options.Timeout, cancellationToken);
+            var completed = await Task.WhenAny(responseTask, delayTask);
+            if (completed != responseTask)
+            {
+                await ShutdownSessionAsync(force: true, responseTask);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
 
-        OfficeWorkerMessage? result;
-        try
-        {
-            result = await responseTask;
-        }
-        catch (Exception exception) when (exception is IOException
-                                           or InvalidOperationException
-                                           or ObjectDisposedException)
-        {
-            await ShutdownSessionAsync(force: true);
-            return new(false, "worker_protocol_failure", SessionInvalid: true);
-        }
+                return new(
+                    false,
+                    "worker_timeout",
+                    TimedOut: true,
+                    HasStandardOutput: diagnostics.HasOutput,
+                    HasStandardError: diagnostics.HasStandardError,
+                    SessionInvalid: true);
+            }
 
-        if (result is null)
-        {
-            var exitCode = session.WaitTask.IsCompletedSuccessfully
-                ? (int?)session.Process.ExitCode
-                : null;
-            var hasOutput = session.HasOutput;
-            var hasStandardError = session.HasStandardError;
-            await ShutdownSessionAsync(force: true);
-            return new(
-                false,
-                "worker_result_missing",
-                exitCode,
-                HasStandardOutput: hasOutput,
-                HasStandardError: hasStandardError,
-                SessionInvalid: true);
-        }
+            OfficeWorkerMessage? result;
+            try
+            {
+                result = await responseTask;
+            }
+            catch (Exception exception) when (exception is IOException
+                                               or InvalidOperationException
+                                               or ObjectDisposedException)
+            {
+                await ShutdownSessionAsync(force: true);
+                return new(
+                    false,
+                    "worker_protocol_failure",
+                    HasStandardOutput: diagnostics.HasOutput,
+                    HasStandardError: diagnostics.HasStandardError,
+                    SessionInvalid: true);
+            }
 
-        var executionResult = new OfficeWorkerExecutionResult(
-            result.Success,
-            result.ErrorCode,
-            HasStandardOutput: session.HasOutput,
-            HasStandardError: session.HasStandardError,
-            HResult: result.HResult,
-            SessionInvalid: result.SessionInvalid);
-        if (result.SessionInvalid)
-        {
-            await ShutdownSessionAsync(force: true);
-        }
+            if (result is null)
+            {
+                var exitCode = session.WaitTask.IsCompletedSuccessfully
+                    ? (int?)session.Process.ExitCode
+                    : null;
+                await ShutdownSessionAsync(force: true);
+                return new(
+                    false,
+                    "worker_result_missing",
+                    exitCode,
+                    HasStandardOutput: diagnostics.HasOutput,
+                    HasStandardError: diagnostics.HasStandardError,
+                    SessionInvalid: true);
+            }
 
-        return executionResult;
+            if (result.AbandonOfficeProcessOwnership)
+            {
+                session.Ownership = null;
+            }
+
+            var executionResult = new OfficeWorkerExecutionResult(
+                result.Success,
+                result.ErrorCode,
+                HasStandardOutput: diagnostics.HasOutput,
+                HasStandardError: diagnostics.HasStandardError,
+                HResult: result.HResult,
+                SessionInvalid: result.SessionInvalid);
+            if (result.SessionInvalid)
+            {
+                await ShutdownSessionAsync(force: true);
+            }
+
+            return executionResult;
+        }
+        finally
+        {
+            session.EndRequest(diagnostics);
+        }
     }
 
-    private static async Task<OfficeWorkerMessage?> ReadResponseAsync(WorkerSession session)
+    private static async Task<OfficeWorkerMessage?> ReadResponseAsync(
+        WorkerSession session,
+        RequestDiagnostics diagnostics)
     {
         while (await session.Process.StandardOutput.ReadLineAsync() is { } line)
         {
@@ -225,7 +247,7 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
                 continue;
             }
 
-            session.HasOutput = true;
+            diagnostics.MarkOutput();
             OfficeWorkerMessage? message;
             try
             {
@@ -330,6 +352,11 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
 
     private sealed class WorkerSession : IDisposable
     {
+        private readonly object _diagnosticGate = new();
+        private RequestDiagnostics? _activeDiagnostics;
+        private bool _pendingStandardError;
+        private bool _hasStartedRequest;
+
         public WorkerSession(
             OfficeApplicationKind application,
             IOfficeWorkerProcess process)
@@ -345,8 +372,40 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
         public Task WaitTask { get; }
         public Task ErrorTask { get; }
         public OfficeProcessOwnership? Ownership { get; set; }
-        public bool HasOutput { get; set; }
-        public bool HasStandardError { get; private set; }
+
+        public RequestDiagnostics BeginRequest()
+        {
+            lock (_diagnosticGate)
+            {
+                if (_activeDiagnostics is not null)
+                {
+                    throw new InvalidOperationException(
+                        "An Office worker request is already active.");
+                }
+
+                var diagnostics = new RequestDiagnostics();
+                if (_pendingStandardError)
+                {
+                    diagnostics.MarkStandardError();
+                    _pendingStandardError = false;
+                }
+
+                _hasStartedRequest = true;
+                _activeDiagnostics = diagnostics;
+                return diagnostics;
+            }
+        }
+
+        public void EndRequest(RequestDiagnostics diagnostics)
+        {
+            lock (_diagnosticGate)
+            {
+                if (ReferenceEquals(_activeDiagnostics, diagnostics))
+                {
+                    _activeDiagnostics = null;
+                }
+            }
+        }
 
         public void Dispose() => Process.Dispose();
 
@@ -354,9 +413,43 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
             TextReader reader,
             WorkerSession session)
         {
-            var content = await reader.ReadToEndAsync();
-            session.HasStandardError = !string.IsNullOrWhiteSpace(content);
+            while (await reader.ReadLineAsync() is { } line)
+            {
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    session.MarkStandardError();
+                }
+            }
         }
+
+        private void MarkStandardError()
+        {
+            lock (_diagnosticGate)
+            {
+                if (_activeDiagnostics is not null)
+                {
+                    _activeDiagnostics.MarkStandardError();
+                }
+                else if (!_hasStartedRequest)
+                {
+                    _pendingStandardError = true;
+                }
+            }
+        }
+    }
+
+    private sealed class RequestDiagnostics
+    {
+        private int _hasOutput;
+        private int _hasStandardError;
+
+        public bool HasOutput => Volatile.Read(ref _hasOutput) != 0;
+        public bool HasStandardError => Volatile.Read(ref _hasStandardError) != 0;
+
+        public void MarkOutput() => Volatile.Write(ref _hasOutput, 1);
+
+        public void MarkStandardError() =>
+            Volatile.Write(ref _hasStandardError, 1);
     }
 }
 

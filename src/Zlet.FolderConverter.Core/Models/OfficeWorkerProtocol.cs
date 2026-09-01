@@ -19,4 +19,5 @@ public sealed record OfficeWorkerMessage(
     long? OfficeProcessStartTimeUtcTicks = null,
     bool OfficeProcessOwned = false,
     int? HResult = null,
-    bool SessionInvalid = false);
+    bool SessionInvalid = false,
+    bool AbandonOfficeProcessOwnership = false);

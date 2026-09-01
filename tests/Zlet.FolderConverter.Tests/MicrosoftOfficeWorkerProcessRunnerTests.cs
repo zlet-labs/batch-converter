@@ -399,7 +399,8 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
             {
                 WorkerExecutablePath = _workerPath,
                 Timeout = timeout ?? TimeSpan.FromMilliseconds(30),
-                ShutdownTimeout = TimeSpan.FromMilliseconds(250)
+                ShutdownTimeout = TimeSpan.FromMilliseconds(250),
+                OwnershipHandshakeTimeout = TimeSpan.FromMilliseconds(250)
             },
             new FakeLauncher(process),
             terminator);
@@ -413,7 +414,8 @@ public sealed class MicrosoftOfficeWorkerProcessRunnerTests : IDisposable
             {
                 WorkerExecutablePath = _workerPath,
                 Timeout = timeout ?? TimeSpan.FromSeconds(1),
-                ShutdownTimeout = TimeSpan.FromMilliseconds(250)
+                ShutdownTimeout = TimeSpan.FromMilliseconds(250),
+                OwnershipHandshakeTimeout = TimeSpan.FromMilliseconds(250)
             },
             launcher,
             terminator);

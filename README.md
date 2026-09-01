@@ -62,6 +62,7 @@ application being tested:
 ```powershell
 $env:ZLET_OFFICE_INTEGRATION = "1"
 $env:ZLET_OFFICE_WORD_FIXTURE = "C:\fixtures\sample.doc"
+$env:ZLET_OFFICE_WORD_BATCH_FIXTURE_DIR = "C:\fixtures\word-batch"
 $env:ZLET_OFFICE_EXCEL_FIXTURE = "C:\fixtures\sample.xls"
 $env:ZLET_OFFICE_POWERPOINT_FIXTURE = "C:\fixtures\sample.ppt"
 dotnet test FolderConverter.sln -c Release --filter Category=OfficeIntegration

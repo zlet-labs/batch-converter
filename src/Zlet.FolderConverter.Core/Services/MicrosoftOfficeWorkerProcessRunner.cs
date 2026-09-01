@@ -13,6 +13,8 @@ public sealed record MicrosoftOfficeWorkerOptions
     public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(2);
 
     public TimeSpan ShutdownTimeout { get; init; } = TimeSpan.FromSeconds(2);
+
+    public TimeSpan OwnershipHandshakeTimeout { get; init; } = TimeSpan.FromSeconds(15);
 }
 
 public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerRunner
@@ -262,14 +264,18 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
                     SessionInvalid: true);
             }
 
-            if (message?.MessageType == OfficeWorkerMessageType.Started
-                && message.OfficeProcessOwned
-                && message.OfficeProcessId is > 0
-                && message.OfficeProcessStartTimeUtcTicks is > 0)
+            if (message?.MessageType == OfficeWorkerMessageType.Started)
             {
-                session.Ownership = new OfficeProcessOwnership(
-                    message.OfficeProcessId.Value,
-                    message.OfficeProcessStartTimeUtcTicks.Value);
+                if (message.OfficeProcessOwned
+                    && message.OfficeProcessId is > 0
+                    && message.OfficeProcessStartTimeUtcTicks is > 0)
+                {
+                    session.Ownership = new OfficeProcessOwnership(
+                        message.OfficeProcessId.Value,
+                        message.OfficeProcessStartTimeUtcTicks.Value);
+                }
+
+                session.MarkOfficeStartObserved();
             }
             else if (message?.MessageType == OfficeWorkerMessageType.Result)
             {
@@ -315,6 +321,16 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
 
         if (force)
         {
+            if (responseTask is not null
+                && !session.OfficeStartObserved.IsCompleted
+                && !session.WaitTask.IsCompleted)
+            {
+                await Task.WhenAny(
+                    session.OfficeStartObserved,
+                    session.WaitTask,
+                    Task.Delay(_options.OwnershipHandshakeTimeout));
+            }
+
             session.Process.Kill();
         }
 
@@ -356,6 +372,8 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
         private RequestDiagnostics? _activeDiagnostics;
         private bool _pendingStandardError;
         private bool _hasStartedRequest;
+        private readonly TaskCompletionSource _officeStartObserved =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public WorkerSession(
             OfficeApplicationKind application,
@@ -372,6 +390,9 @@ public sealed class MicrosoftOfficeWorkerProcessRunner : IMicrosoftOfficeWorkerR
         public Task WaitTask { get; }
         public Task ErrorTask { get; }
         public OfficeProcessOwnership? Ownership { get; set; }
+        public Task OfficeStartObserved => _officeStartObserved.Task;
+
+        public void MarkOfficeStartObserved() => _officeStartObserved.TrySetResult();
 
         public RequestDiagnostics BeginRequest()
         {

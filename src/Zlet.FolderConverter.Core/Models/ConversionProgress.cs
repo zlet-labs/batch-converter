@@ -5,4 +5,5 @@ public sealed record ConversionProgress(
     int Total,
     string RelativePath,
     OperationStatus Status,
-    ConversionResult? Result = null);
+    ConversionResult? Result = null,
+    int? OperationPercent = null);

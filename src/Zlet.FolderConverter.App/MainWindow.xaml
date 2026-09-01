@@ -244,9 +244,23 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="Найдено"
-                                                        Binding="{Binding Count}"
-                                                        Width="72" />
+                                    <DataGridTemplateColumn Header="Найден" Width="72">
+                                        <DataGridTemplateColumn.HeaderStyle>
+                                            <Style TargetType="DataGridColumnHeader"
+                                                   BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                                                <Setter Property="Padding" Value="8,0" />
+                                            </Style>
+                                        </DataGridTemplateColumn.HeaderStyle>
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Count}"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           TextAlignment="Center" />
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
                                     <DataGridTemplateColumn Header="Что делать" Width="150">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
@@ -359,11 +373,16 @@
                                 Padding="14,7"
                                 Visibility="{Binding HasPreview, Converter={StaticResource BoolToVisibilityConverter}}">
                             <DockPanel>
-                                <TextBlock Text="{Binding SelectionSummary}"
-                                           VerticalAlignment="Center"
-                                           FontWeight="SemiBold"
-                                           Foreground="#70E4FF"
-                                           DockPanel.Dock="Right" />
+                                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                                    <TextBlock Text="{Binding CopyListStatus}"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,14,0"
+                                               Foreground="{StaticResource TextSecondaryBrush}" />
+                                    <TextBlock Text="{Binding SelectionSummary}"
+                                               VerticalAlignment="Center"
+                                               FontWeight="SemiBold"
+                                               Foreground="#70E4FF" />
+                                </StackPanel>
                                 <StackPanel Orientation="Horizontal">
                                     <Button Content="Выбрать все"
                                             Style="{StaticResource CompactButtonStyle}"
@@ -377,8 +396,13 @@
                                             Click="ClearSelectionButton_Click" />
                                     <Button Content="Инвертировать"
                                             Style="{StaticResource CompactButtonStyle}"
+                                            Margin="0,0,8,0"
                                             IsEnabled="{Binding CanChangeSettings}"
                                             Click="InvertSelectionButton_Click" />
+                                    <Button Content="Копировать список"
+                                            Style="{StaticResource CompactButtonStyle}"
+                                            IsEnabled="{Binding CanCopyConversionList}"
+                                            Click="CopyConversionListButton_Click" />
                                 </StackPanel>
                             </DockPanel>
                         </Border>
@@ -453,9 +477,12 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
+                                    <DataGridTextColumn Header="Размер"
+                                                        Binding="{Binding FileSizeText}"
+                                                        Width="82" />
                                     <DataGridTextColumn Header="Действие"
                                                         Binding="{Binding ActionLabel}"
-                                                        Width="170" />
+                                                        Width="145" />
                                     <DataGridTemplateColumn Header="Результат" Width="1.25*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
@@ -465,7 +492,7 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="Статус" Width="310">
+                                    <DataGridTemplateColumn Header="Статус" Width="220">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <Border CornerRadius="10"
@@ -483,8 +510,17 @@
                                                                 <DataTrigger Binding="{Binding StatusTone}" Value="Danger">
                                                                     <Setter Property="Background" Value="{StaticResource DangerStatusBrush}" />
                                                                 </DataTrigger>
-                                                                <DataTrigger Binding="{Binding StatusTone}" Value="Positive">
-                                                                    <Setter Property="Background" Value="{StaticResource PositiveStatusBrush}" />
+                                                                <DataTrigger Binding="{Binding StatusTone}" Value="Success">
+                                                                    <Setter Property="Background" Value="{StaticResource SuccessStatusBrush}" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding StatusTone}" Value="InProgress">
+                                                                    <Setter Property="Background" Value="{StaticResource InProgressStatusBrush}" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding StatusTone}" Value="Ready">
+                                                                    <Setter Property="Background" Value="{StaticResource ReadyStatusBrush}" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding StatusTone}" Value="Cancelled">
+                                                                    <Setter Property="Background" Value="{StaticResource CancelledStatusBrush}" />
                                                                 </DataTrigger>
                                                             </Style.Triggers>
                                                         </Style>
@@ -492,12 +528,15 @@
                                                     <TextBlock Text="{Binding Status}"
                                                                FontSize="14"
                                                                FontWeight="SemiBold"
-                                                               TextWrapping="Wrap"
-                                                               MaxWidth="280" />
+                                                               TextTrimming="CharacterEllipsis"
+                                                               MaxWidth="200" />
                                                 </Border>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
+                                    <DataGridTextColumn Header="Время"
+                                                        Binding="{Binding ExecutionTimeText}"
+                                                        Width="72" />
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Grid>
@@ -516,10 +555,11 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
-                                    <TextBlock Text="Обработка завершена"
+                                    <TextBlock Text="{Binding FinalReportTitle}"
                                                FontWeight="SemiBold" />
                                     <WrapPanel Margin="0,5,0,0">
-                                        <TextBlock Text="{Binding FinalSucceeded, StringFormat=Успешно: {0}}" Margin="0,0,14,0" />
+                                        <TextBlock Text="{Binding FinalConverted, StringFormat=Преобразовано: {0}}" Margin="0,0,14,0" />
+                                        <TextBlock Text="{Binding FinalCopied, StringFormat=Скопировано: {0}}" Margin="0,0,14,0" />
                                         <TextBlock Text="{Binding FinalFailed, StringFormat=Ошибок: {0}}" Margin="0,0,14,0" />
                                         <TextBlock Text="{Binding FinalConflicts, StringFormat=Конфликтов: {0}}" Margin="0,0,14,0" />
                                         <TextBlock Text="{Binding FinalUnavailable, StringFormat=Недоступно: {0}}" Margin="0,0,14,0" />
@@ -668,6 +708,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Преобразование"
                                        FontWeight="SemiBold" />
@@ -680,8 +721,15 @@
                                        Margin="16,0,0,0"
                                        FontWeight="Bold"
                                        Foreground="#70E4FF" />
+                            <Button Grid.Column="3"
+                                    Content="{Binding StopButtonText}"
+                                    Style="{StaticResource CompactButtonStyle}"
+                                    Margin="16,-4,0,-4"
+                                    MinWidth="112"
+                                    IsEnabled="{Binding CanStop}"
+                                    Click="StopButton_Click" />
                             <ProgressBar Grid.Row="1"
-                                         Grid.ColumnSpan="3"
+                                         Grid.ColumnSpan="4"
                                          Height="8"
                                          Margin="0,7,0,7"
                                          Minimum="0"

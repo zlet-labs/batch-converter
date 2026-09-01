@@ -166,5 +166,6 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
             status,
             message,
             outputRootPath,
-            sourceRootPath);
+            sourceRootPath,
+            file.SizeBytes);
 }

@@ -6,6 +6,58 @@ namespace Zlet.FolderConverter.Tests;
 
 public sealed class MicrosoftOfficeIntegrationTests
 {
+    [OfficeBatchIntegrationFact(
+        OfficeApplicationKind.Word,
+        "ZLET_OFFICE_WORD_BATCH_FIXTURE_DIR")]
+    [Trait("Category", "OfficeIntegration")]
+    public async Task Converts_twenty_plus_docs_in_one_reused_worker_batch()
+    {
+        var sourceRoot = Path.GetFullPath(
+            Environment.GetEnvironmentVariable("ZLET_OFFICE_WORD_BATCH_FIXTURE_DIR")!);
+        var sourcePaths = Directory.EnumerateFiles(sourceRoot, "*.doc")
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var sourceHashes = sourcePaths.ToDictionary(path => path, Hash);
+        var outputRoot = Path.Combine(
+            Path.GetTempPath(), "ZletBatchConverter", "office-batch-integration",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outputRoot);
+        try
+        {
+            var detector = new MicrosoftOfficeCapabilityDetector();
+            var runner = new MicrosoftOfficeWorkerProcessRunner(
+                new MicrosoftOfficeWorkerOptions
+                {
+                    WorkerExecutablePath = Path.Combine(
+                        AppContext.BaseDirectory,
+                        "Zlet.FolderConverter.OfficeWorker.exe"),
+                    Timeout = TimeSpan.FromMinutes(2)
+                });
+            var resolver = new DefaultConversionAdapterResolver(detector, runner);
+            var scanner = new FileSystemFolderScanner();
+            var scan = await scanner.ScanAsync(sourceRoot, true, CancellationToken.None);
+            var operations = new ConversionPlanner(resolver).CreatePlan(
+                scan,
+                sourceRoot,
+                outputRoot,
+                RuleSet.CreateDefault());
+
+            var summary = await new ConversionProcessor(resolver).ProcessAsync(
+                operations,
+                progress: null,
+                CancellationToken.None);
+
+            Assert.True(sourcePaths.Length >= 20);
+            Assert.Equal(sourcePaths.Length, summary.Succeeded);
+            Assert.Equal(sourcePaths.Length, Directory.EnumerateFiles(outputRoot, "*.docx").Count());
+            Assert.All(sourcePaths, path => Assert.Equal(sourceHashes[path], Hash(path)));
+        }
+        finally
+        {
+            if (Directory.Exists(outputRoot)) Directory.Delete(outputRoot, recursive: true);
+        }
+    }
+
     [OfficeIntegrationFact(
         OfficeApplicationKind.Word,
         "ZLET_OFFICE_WORD_FIXTURE")]
@@ -136,6 +188,40 @@ public sealed class OfficeIntegrationFactAttribute : FactAttribute
         if (string.IsNullOrWhiteSpace(fixture) || !File.Exists(fixture))
         {
             Skip = $"Set {fixtureVariable} to a real legacy Office fixture.";
+        }
+    }
+}
+
+public sealed class OfficeBatchIntegrationFactAttribute : FactAttribute
+{
+    public OfficeBatchIntegrationFactAttribute(
+        OfficeApplicationKind application,
+        string fixtureDirectoryVariable)
+    {
+        if (!string.Equals(
+                Environment.GetEnvironmentVariable("ZLET_OFFICE_INTEGRATION"),
+                "1",
+                StringComparison.Ordinal))
+        {
+            Skip = "Set ZLET_OFFICE_INTEGRATION=1 to opt in to Office integration tests.";
+            return;
+        }
+
+        var available = new MicrosoftOfficeCapabilityDetector().Detect()
+            .Single(item => item.Application == application)
+            .IsAvailable;
+        if (!available)
+        {
+            Skip = $"{application.ToDisplayName()} is not installed.";
+            return;
+        }
+
+        var directory = Environment.GetEnvironmentVariable(fixtureDirectoryVariable);
+        if (string.IsNullOrWhiteSpace(directory)
+            || !Directory.Exists(directory)
+            || Directory.EnumerateFiles(directory, "*.doc").Take(20).Count() < 20)
+        {
+            Skip = $"Set {fixtureDirectoryVariable} to a directory containing 20+ real DOC files.";
         }
     }
 }

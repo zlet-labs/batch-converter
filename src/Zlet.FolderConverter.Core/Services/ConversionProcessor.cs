@@ -34,7 +34,8 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
                     completedReady,
                     readyTotal,
                     operation.RelativePath,
-                    OperationStatus.Converting));
+                    OperationStatus.Converting,
+                    OperationPercent: 10));
 
                 ConversionResult result;
                 var adapter = adapterResolver.Resolve(operation.SourceFormat, operation.Target);
@@ -55,6 +56,16 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
                     }
                     catch (OperationCanceledException)
                     {
+                        var cancelled = new ConversionResult(
+                            operation,
+                            OperationStatus.Cancelled,
+                            "Отменено пользователем.");
+                        progress?.Report(new ConversionProgress(
+                            completedReady,
+                            readyTotal,
+                            operation.RelativePath,
+                            OperationStatus.Cancelled,
+                            cancelled));
                         throw;
                     }
                     catch
@@ -74,7 +85,8 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
                     readyTotal,
                     operation.RelativePath,
                     result.Status,
-                    result));
+                    result,
+                    result.Status == OperationStatus.Succeeded ? 100 : null));
             }
         }
         finally

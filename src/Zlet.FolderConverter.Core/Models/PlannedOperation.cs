@@ -11,7 +11,8 @@ public sealed record PlannedOperation(
     OperationStatus Status,
     string Message,
     string OutputRootPath = "",
-    string SourceRootPath = "")
+    string SourceRootPath = "",
+    long SourceSizeBytes = 0)
 {
     public string TargetFormat => Target == ConversionTarget.Skip
         ? "Не трогать"

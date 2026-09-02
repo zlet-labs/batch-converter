@@ -1,25 +1,37 @@
-# Zlet Batch Converter v0.0.2 — Release Notes
+# Zlet Batch Converter v0.0.2
 
 [English](#english) · [Русский](#русский)
 
-> **PRE-ALPHA.** This document is the release description for v0.0.2. Publish it together with verified binaries only after the release build and manual verification are complete.
+> **PRE-ALPHA · Windows x64 · Local processing only**
 
 ## English
 
-Zlet Batch Converter v0.0.2 is a PRE-ALPHA Windows x64 release focused on faster Office batch processing, safer cancellation, and a clearer preview/result workflow.
+Zlet Batch Converter v0.0.2 focuses on faster Office batch conversion, safer cancellation, clearer per-file progress, and a more useful final batch summary.
 
-### What's new in v0.0.2
+### Downloads
+
+- **[Windows installer](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/ZletBatchConverter-v0.0.2-Setup-win-x64.exe)** — `ZletBatchConverter-v0.0.2-Setup-win-x64.exe`
+- **[Portable ZIP](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/ZletBatchConverter-v0.0.2-win-x64.zip)** — `ZletBatchConverter-v0.0.2-win-x64.zip`
+- **[SHA-256 checksums](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/SHA256SUMS.txt)**
+
+Installer SHA-256:
+`519855e75ed63385b914bf7cb37efa7a42717728ae6420e6291dcb27e8ed58d5`
+
+Portable ZIP SHA-256:
+`998854d1e64f605fd140ba60c52d6e22257265905fdb4e254a80cfe57e2643b0`
+
+### Highlights
 
 - **Much faster multi-file Office batches.** Word/Excel/PowerPoint worker sessions are reused where safe instead of starting a fresh worker for every file.
-- **Safe Stop control.** An active batch can be stopped without launching new queued operations and without killing unrelated user Office processes.
-- **Per-file progress and timing.** Active rows show stage-based progress and elapsed execution time; completed rows keep their final values.
+- **Safe Stop control.** Stop prevents new queued operations from starting and does not kill unrelated user Office processes.
+- **Per-file progress and timing.** Active rows show observable stage-based progress and elapsed execution time; completed values remain visible.
 - **Source file size in Preview.** File size is visible before processing and remains available afterward.
-- **Clearer status styling.** Ready, in-progress, success, warning, error and cancelled states are easier to distinguish while still keeping explicit text labels.
+- **Clearer statuses.** Ready, in-progress, success, warning, error, and cancelled states remain text-labelled and visually distinct.
 - **Copy conversion list.** Planned real conversions can be copied as relative `source → result` paths without exposing absolute local paths.
-- **Better final batch summary.** Converted, copied, failed, conflict, unavailable, skipped and unselected counts are shown separately, together with total elapsed time.
-- **Improved rerun behavior.** Previously unselected ready rows can be selected and processed later without rebuilding the Preview.
-- **Failure diagnostics survive Stop/rerun.** Error codes and HRESULT details are retained without duplicate reporting.
-- **Stronger Office process ownership safety.** Forced cleanup still requires exact app-owned process identity using PID + start time; processes are never killed by name alone.
+- **Better final summary.** Converted, copied, failed, conflict, unavailable, skipped, and unselected counts are shown separately with total elapsed time.
+- **Improved rerun behavior.** Previously unselected ready rows can be selected and processed later without rebuilding Preview.
+- **Failure diagnostics survive Stop/rerun.** ErrorCode and HRESULT details remain available without duplicate reporting.
+- **Stronger Office ownership safety.** Forced cleanup requires exact app-owned process identity using PID + start time; processes are never killed by name alone.
 
 ### Supported operations
 
@@ -33,55 +45,54 @@ Zlet Batch Converter v0.0.2 is a PRE-ALPHA Windows x64 release focused on faster
 
 Microsoft Office is not included.
 
-### Downloads
-
-Expected release assets:
-
-- `ZletBatchConverter-v0.0.2-Setup-win-x64.exe`
-- `ZletBatchConverter-v0.0.2-win-x64.zip`
-
-Do not publish or link these names as downloadable files until the actual release assets have been built, verified and attached to GitHub Release `v0.0.2`.
-
 ### Important notes
 
 - Files are processed locally; document contents are not uploaded to a cloud service.
 - Existing output files/directories are not silently overwritten.
 - PPT conversion is refused while user PowerPoint is already running, to avoid interfering with an open presentation.
-- The installer is currently unsigned, so Windows may show an unknown-publisher or SmartScreen warning.
-- Complex, corrupted, password-protected or unsupported legacy files may fail to convert.
+- The installer is currently unsigned, so Windows may show an Unknown publisher or SmartScreen warning.
+- Complex, corrupted, password-protected, or unsupported legacy files may fail to convert.
 - Conversion fidelity depends on the installed Microsoft Office version and document features.
 
-### Verification before publication
+### Verification
 
-Before publishing v0.0.2 binaries, verify at minimum:
+- GitHub-hosted release build completed successfully.
+- Automated tests: **242 passed, 4 Office integration skipped, 0 failed**.
+- Real Office/manual verification was completed separately before publication.
+- Release assets were published with SHA-256 checksums above.
 
-- Release build succeeds with no errors.
-- Automated tests pass; Office integration skips are explicitly distinguished from passes.
-- Real Office integration checks pass for the formats available on the verification machine.
-- Portable ZIP launches from a clean extracted directory.
-- Installer install/launch/uninstall flow is checked.
-- Stop/cancellation does not leave app-owned worker/Office processes behind and does not affect unrelated user Office processes.
-- Existing outputs are not overwritten and partial temporary output is cleaned up.
-- SHA-256 is recorded for each published asset.
+Full checklist: [`docs/manual-clean-machine-verification.md`](manual-clean-machine-verification.md)
 
-Use `docs/manual-clean-machine-verification.md` for the full checklist.
+---
 
 ## Русский
 
-Zlet Batch Converter v0.0.2 — PRE-ALPHA релиз для Windows x64 с упором на ускорение пакетной Office-конвертации, безопасную остановку и более понятную работу с Preview и результатами.
+Zlet Batch Converter v0.0.2 — PRE-ALPHA релиз для Windows x64 с упором на ускорение пакетной Office-конвертации, безопасную остановку, понятный прогресс по файлам и более полезную итоговую сводку.
 
-### Что нового в v0.0.2
+### Скачать
+
+- **[Установщик Windows](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/ZletBatchConverter-v0.0.2-Setup-win-x64.exe)** — `ZletBatchConverter-v0.0.2-Setup-win-x64.exe`
+- **[Portable ZIP](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/ZletBatchConverter-v0.0.2-win-x64.zip)** — `ZletBatchConverter-v0.0.2-win-x64.zip`
+- **[SHA-256](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/SHA256SUMS.txt)**
+
+SHA-256 установщика:
+`519855e75ed63385b914bf7cb37efa7a42717728ae6420e6291dcb27e8ed58d5`
+
+SHA-256 portable ZIP:
+`998854d1e64f605fd140ba60c52d6e22257265905fdb4e254a80cfe57e2643b0`
+
+### Главное в v0.0.2
 
 - **Пакетная Office-конвертация стала заметно быстрее.** Worker/session Word, Excel и PowerPoint переиспользуется там, где это безопасно, вместо запуска нового worker для каждого файла.
-- **Безопасная кнопка «Остановить».** Активную пачку можно остановить без запуска следующих операций и без завершения посторонних пользовательских процессов Office.
-- **Прогресс и время по каждому файлу.** Активная строка показывает stage-based progress и фактическое время выполнения; завершённые значения фиксируются.
-- **Размер исходного файла в Preview.** Размер виден ещё до обработки и остаётся после завершения.
-- **Более понятные статусы.** Ready, in-progress, success, warning, error и cancelled визуально различимы, при этом текст статуса остаётся явным.
-- **Копирование списка преобразований.** Реальные запланированные конверсии можно скопировать как относительные пути `исходник → результат` без раскрытия абсолютных локальных путей.
-- **Раздельная итоговая сводка.** Отдельно показываются преобразованные, скопированные, ошибки, конфликты, недоступные, пропущенные и не выбранные файлы, плюс общее время выполнения.
+- **Безопасная кнопка Stop.** После остановки новые операции из очереди не запускаются, посторонние пользовательские Office-процессы не завершаются.
+- **Прогресс и время по каждому файлу.** Активная строка показывает наблюдаемый stage-based progress и фактическое время выполнения; завершённые значения сохраняются.
+- **Размер исходника в Preview.** Размер виден до обработки и остаётся после завершения.
+- **Более понятные статусы.** Ready, in-progress, success, warning, error и cancelled визуально различимы и сохраняют явные текстовые подписи.
+- **Копирование списка преобразований.** Реальные планируемые конверсии можно скопировать как относительные пути `исходник → результат` без раскрытия абсолютных локальных путей.
+- **Улучшена итоговая сводка.** Converted, copied, failed, conflict, unavailable, skipped и unselected показываются отдельно вместе с общим временем выполнения.
 - **Улучшен повторный запуск.** Ранее не выбранные готовые строки можно выбрать и обработать позже без нового Scan.
 - **Диагностика ошибок не теряется после Stop/rerun.** ErrorCode и HRESULT сохраняются без дублирования.
-- **Усилена безопасность владения Office-процессами.** Принудительное завершение возможно только для точно подтверждённого app-owned процесса по PID + времени запуска; завершения процессов только по имени нет.
+- **Усилена безопасность владения Office-процессами.** Принудительное завершение возможно только для подтверждённого app-owned процесса по PID + времени запуска; завершения только по имени процесса нет.
 
 ### Поддерживаемые операции
 
@@ -95,15 +106,6 @@ Zlet Batch Converter v0.0.2 — PRE-ALPHA релиз для Windows x64 с уп�
 
 Microsoft Office в комплект не входит.
 
-### Файлы релиза
-
-Ожидаемые assets:
-
-- `ZletBatchConverter-v0.0.2-Setup-win-x64.exe`
-- `ZletBatchConverter-v0.0.2-win-x64.zip`
-
-Не публиковать и не указывать их как доступные для скачивания, пока реальные файлы не собраны, не проверены и не прикреплены к GitHub Release `v0.0.2`.
-
 ### Важно
 
 - Файлы обрабатываются локально, содержимое документов не загружается в облачный сервис.
@@ -113,17 +115,11 @@ Microsoft Office в комплект не входит.
 - Сложные, повреждённые, защищённые паролем или неподдерживаемые legacy-файлы могут не преобразоваться.
 - Результат зависит от установленной версии Microsoft Office и возможностей конкретного документа.
 
-### Проверка перед публикацией
+### Проверка
 
-Перед публикацией бинарников v0.0.2 проверить минимум:
+- Release build в GitHub Actions завершён успешно.
+- Автоматические тесты: **242 passed, 4 Office integration skipped, 0 failed**.
+- Реальная Office/manual проверка выполнена отдельно до публикации релиза.
+- Для опубликованных assets зафиксированы SHA-256 выше.
 
-- Release build собирается без ошибок.
-- Автоматические тесты проходят; Office integration skips явно отличаются от passed.
-- Реальные Office integration checks проходят для форматов, доступных на проверочной машине.
-- Portable ZIP запускается после распаковки в чистую папку.
-- Проверен install/launch/uninstall flow установщика.
-- Stop/cancellation не оставляет app-owned worker/Office процессы и не затрагивает посторонние пользовательские Office процессы.
-- Существующие результаты не перезаписываются, временные/частичные outputs очищаются.
-- Для каждого опубликованного asset записан SHA-256.
-
-Полный чек-лист: `docs/manual-clean-machine-verification.md`.
+Полный чек-лист: [`docs/manual-clean-machine-verification.md`](manual-clean-machine-verification.md)

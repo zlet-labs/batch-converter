@@ -1,32 +1,40 @@
 # Zlet Batch Converter
 
-![Version](https://img.shields.io/badge/version-v0.0.2-blue)
-![Status](https://img.shields.io/badge/status-PRE--ALPHA-orange)
-![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4)
-![.NET](https://img.shields.io/badge/.NET-8-512BD4)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Processing](https://img.shields.io/badge/processing-local%20only-success)
+<p align="center">
+  <img src="docs/assets/zlet-batch-converter-hero.svg" alt="Zlet Batch Converter — локальный пакетный конвертер файлов для Windows от Zlet Labs" width="100%">
+</p>
 
-[English](README.md) · **Русский**
+<p align="center">
+  <a href="README.md">English</a> · <strong>Русский</strong>
+</p>
 
-Zlet Batch Converter — небольшая локальная утилита для Windows, которая пакетно обрабатывает файлы в папках и подпапках. Она преобразует поддерживаемые старые форматы Microsoft Office, безопасно копирует уже современные Office-файлы и выполняет обработку на компьютере пользователя.
+<p align="center">
+  <img alt="Версия v0.0.2" src="https://img.shields.io/badge/version-v0.0.2-2563eb">
+  <img alt="PRE-ALPHA" src="https://img.shields.io/badge/status-PRE--ALPHA-f59e0b">
+  <img alt="Windows x64" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4">
+  <img alt="Локальная обработка" src="https://img.shields.io/badge/processing-local%20only-16a34a">
+  <img alt="MIT License" src="https://img.shields.io/badge/license-MIT-22c55e">
+</p>
 
-**Без аккаунтов. Без загрузки файлов в облако. Содержимое документов никуда не отправляется.**
+Zlet Batch Converter — небольшая локальная утилита для Windows, которая пакетно обрабатывает файлы в папках и подпапках. Она преобразует поддерживаемые старые форматы Microsoft Office, безопасно копирует современные Office-файлы, сохраняет относительную структуру папок и выполняет обработку на вашем компьютере.
 
-> **Текущая версия исходников: v0.0.2 PRE-ALPHA.** Проверенные бинарные сборки публикуются отдельно на странице GitHub Releases после ручной проверки. Если `v0.0.2` там ещё нет, исходники в репозитории новее последней опубликованной сборки.
+> **v0.0.2 — PRE-ALPHA.** Установщик пока не подписан Authenticode, поэтому Windows может показать Unknown publisher или предупреждение SmartScreen. Microsoft Office в комплект не входит.
 
-## Что умеет
+## Скачать v0.0.2
 
-- Сканирует выбранную папку и подпапки.
-- Показывает Preview до начала обработки.
-- Позволяет выбрать, какие операции запускать.
-- Преобразует поддерживаемые старые Office-файлы через установленный Microsoft Office.
-- Безопасно копирует современные Office-файлы без преобразования.
-- Сохраняет относительную структуру подпапок.
-- Никогда молча не перезаписывает существующий файл или каталог результата.
-- Показывает статус, прогресс, размер исходника и время выполнения по каждому файлу.
-- Позволяет остановить активную пачку без завершения посторонних пользовательских Office-процессов.
-- Позволяет скопировать список планируемых преобразований только с относительными путями.
+| Установщик Windows | Portable ZIP |
+|---|---|
+| **[⬇ Скачать установщик](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/ZletBatchConverter-v0.0.2-Setup-win-x64.exe)** | **[📦 Скачать portable](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/ZletBatchConverter-v0.0.2-win-x64.zip)** |
+| `ZletBatchConverter-v0.0.2-Setup-win-x64.exe` | `ZletBatchConverter-v0.0.2-win-x64.zip` |
+
+[Описание релиза](https://github.com/zlet-labs/batch-converter/releases/tag/v0.0.2) · [SHA-256](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/SHA256SUMS.txt)
+
+### Зачем использовать
+
+| 🔒 Локально | ⚡ Пакетно | 🛡 Осторожно с файлами |
+|---|---|---|
+| Без аккаунтов и загрузки в облако | Папки и подпапки за один запуск | Существующие результаты не перезаписываются молча |
+| Содержимое документов остаётся на ПК | Можно выбрать только нужные операции | Office-процессы не завершаются только по имени |
 
 ## Поддерживаемые форматы
 
@@ -35,45 +43,43 @@ Zlet Batch Converter — небольшая локальная утилита д
 | `.doc` | `.docx` | установлен Microsoft Word |
 | `.xls` | `.xlsx` | установлен Microsoft Excel |
 | `.ppt` | `.pptx` | установлен Microsoft PowerPoint |
-| `.docx`, `.xlsx`, `.pptx` | безопасная копия без изменений | Microsoft Office не нужен |
-| `.json` | `.txt` или `.md` | Microsoft Office не нужен |
+| `.docx`, `.xlsx`, `.pptx` | безопасная копия без изменений | Office не нужен |
+| `.json` | `.txt` или `.md` | Office не нужен |
 
-Word, Excel и PowerPoint определяются независимо. Если одно приложение отсутствует, недоступен только связанный с ним legacy-формат; остальные операции в пачке могут выполняться дальше.
+Word, Excel и PowerPoint определяются независимо. Если одно приложение отсутствует, недоступна только связанная с ним legacy-конвертация; остальные операции в пачке могут продолжить работу.
 
-Microsoft Office **не входит в комплект** Zlet Batch Converter.
-
-### Ограничение безопасности PowerPoint
-
-PowerPoint использует общий COM-процесс. Чтобы не вмешиваться в уже открытую пользователем презентацию, преобразование PPT не запускается, пока работает `POWERPNT`. Закройте PowerPoint и повторите преобразование.
-
-Это ограничение не блокирует DOC/XLS и копирование готовых PPTX без изменений.
+> **Безопасность PowerPoint:** преобразование PPT не запускается, пока у пользователя уже открыт PowerPoint. Это защищает открытую презентацию от вмешательства. DOC/XLS и копирование готовых PPTX при этом остаются доступны.
 
 ## Быстрый старт
 
-1. Скачайте проверенную сборку со страницы [GitHub Releases](https://github.com/zlet-labs/batch-converter/releases) или соберите текущие исходники самостоятельно.
+1. Скачайте установщик или portable ZIP выше.
 2. Запустите `ZletBatchConverter.exe`.
-3. Выберите исходную папку.
-4. Выполните сканирование и проверьте запланированные действия.
-5. Отметьте нужные операции.
-6. Выберите место/режим сохранения результата и запустите обработку.
-7. Проверьте итоговую сводку и созданные файлы.
+3. Выберите исходную папку и выполните сканирование.
+4. Проверьте Preview и отметьте нужные операции.
+5. Выберите место/режим сохранения результата и запустите обработку.
+6. Проверьте результаты по файлам и итоговую сводку пачки.
 
-В готовых сборках .NET поставляется self-contained, отдельно устанавливать .NET Runtime не требуется.
+Готовые сборки self-contained для .NET 8, поэтому отдельно устанавливать .NET Runtime не требуется.
 
-## Загрузка и релизы
+## Что получает пользователь
 
-Опубликованные сборки находятся на странице [Releases](https://github.com/zlet-labs/batch-converter/releases).
+- Preview до начала обработки.
+- Выбор отдельных операций перед запуском.
+- Сохранение относительной структуры подпапок в результате.
+- Статус, stage-based progress, размер исходника и время выполнения по каждому файлу.
+- Безопасную кнопку Stop, которая не запускает следующие операции из очереди.
+- Копирование списка преобразований только с относительными путями.
+- Раздельные итоговые счётчики converted, copied, failed, conflict, unavailable, skipped и unselected.
+- Более быструю пакетную Office-обработку за счёт безопасного переиспользования worker/session там, где это допустимо.
 
-В релиз могут входить:
+## Ограничения
 
-- `ZletBatchConverter-v<version>-Setup-win-x64.exe` — установщик Windows;
-- `ZletBatchConverter-v<version>-win-x64.zip` — portable-архив.
+Zlet Batch Converter всё ещё находится в статусе **PRE-ALPHA**. Сложные, повреждённые, защищённые паролем или использующие неподдерживаемые возможности legacy-документы могут не преобразоваться. Точность результата зависит от установленной версии Microsoft Office и особенностей конкретного документа.
 
-Используйте только файлы, реально прикреплённые к опубликованному GitHub Release. Номер версии в исходниках сам по себе не означает, что соответствующие бинарники уже опубликованы.
+Исходные файлы не должны намеренно изменяться, но для важных данных при тестировании pre-release ПО рекомендуется иметь резервную копию.
 
-Установщик пока не подписан Authenticode, поэтому Windows может показать предупреждение Unknown publisher или SmartScreen.
-
-## Безопасность и приватность
+<details>
+<summary><strong>Подробно о безопасности и приватности</strong></summary>
 
 Конвертер специально сделан локальным и осторожным по отношению к пользовательским файлам.
 
@@ -93,12 +99,15 @@ PowerPoint использует общий COM-процесс. Чтобы не �
 
 Техническая диагностика может содержать коды ошибок и служебные данные процесса. Она не должна содержать содержимое документов, секреты или полные локальные пути документов.
 
-## Сборка из исходников
+</details>
+
+<details>
+<summary><strong>Сборка из исходников и локальная упаковка</strong></summary>
 
 Требования:
 
-- Windows x64;
-- .NET 8 SDK.
+- Windows x64
+- .NET 8 SDK
 
 ```powershell
 dotnet restore FolderConverter.sln
@@ -106,31 +115,30 @@ dotnet build FolderConverter.sln -c Release
 dotnet test FolderConverter.sln -c Release
 ```
 
-## Сборка portable-пакета
+Сборка portable-пакета:
 
 ```powershell
 .\scripts\publish-portable.ps1
 ```
 
-Для v0.0.2 ожидаемое имя ZIP:
+Ожидаемый ZIP для v0.0.2:
 
 ```text
 artifacts/portable/win-x64/ZletBatchConverter-v0.0.2-win-x64.zip
 ```
 
-Portable-пакет содержит self-contained .NET 8 приложение и worker. Microsoft Office, Python, Java, исходники и тестовые фикстуры в него не входят.
-
-## Сборка установщика Windows
-
-Для создания installer используется Inno Setup 6:
+Сборка Windows installer через Inno Setup 6:
 
 ```powershell
 .\scripts\build-installer.ps1
 ```
 
-Скрипт сначала собирает portable payload, затем создаёт установщик Windows x64. В конце он выводит SHA-256 установщика и статус Authenticode.
+Скрипт установщика сначала собирает portable payload, затем создаёт Windows x64 installer и выводит его SHA-256 и статус Authenticode.
 
-## Office integration tests
+</details>
+
+<details>
+<summary><strong>Реальные Microsoft Office integration tests</strong></summary>
 
 Реальные интеграционные тесты Office запускаются только явно, потому что требуют установленный Microsoft Office и настоящие legacy-файлы:
 
@@ -145,25 +153,12 @@ dotnet test FolderConverter.sln -c Release --filter Category=OfficeIntegration
 
 Если нужное приложение Office или фикстура отсутствует, соответствующий integration test пропускается, а не считается успешно пройденным.
 
-## Ограничения
-
-Zlet Batch Converter всё ещё находится в статусе **PRE-ALPHA**.
-
-Сложные, повреждённые, защищённые паролем или использующие неподдерживаемые возможности legacy-документы могут не преобразоваться. Точность результата зависит от установленной версии Microsoft Office и особенностей конкретного документа. Проект не обещает успешную legacy-конвертацию на компьютере без соответствующего приложения Office.
-
-Исходные файлы не должны намеренно изменяться, но для важных данных при тестировании pre-release ПО рекомендуется иметь резервную копию.
-
-## Проверка перед релизом
-
-Перед публикацией бинарных сборок используется ручной clean-machine checklist:
-
-[docs/manual-clean-machine-verification.md](docs/manual-clean-machine-verification.md)
+</details>
 
 ## Проект
 
 Zlet Batch Converter — проект **Zlet Labs**: небольшие практичные self-serve инструменты без лишней SaaS-инфраструктуры.
 
-- Issues: [GitHub Issues](https://github.com/zlet-labs/batch-converter/issues)
-- Releases: [GitHub Releases](https://github.com/zlet-labs/batch-converter/releases)
-- Лицензия: [MIT](LICENSE)
-- English README: [README.md](README.md)
+[Zlet Labs](https://zlet.app/) · [GitHub Issues](https://github.com/zlet-labs/batch-converter/issues) · [Все релизы](https://github.com/zlet-labs/batch-converter/releases) · [MIT License](LICENSE)
+
+Чек-лист ручной проверки релиза: [docs/manual-clean-machine-verification.md](docs/manual-clean-machine-verification.md)

@@ -1,0 +1,207 @@
+name: Draft Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: draft-release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and prepare draft release
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Resolve release metadata
+        id: meta
+        shell: pwsh
+        run: |
+          $appProject = "src\Zlet.FolderConverter.App\Zlet.FolderConverter.App.csproj"
+          $version = (& dotnet msbuild $appProject -nologo -getProperty:ZletProductVersion |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            Select-Object -Last 1).Trim()
+
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "ZletProductVersion is empty."
+          }
+
+          $tag = "v$version"
+          $notes = "docs\RELEASE_NOTES_v$version.md"
+          $installer = "ZletBatchConverter-v$version-Setup-win-x64.exe"
+          $portable = "ZletBatchConverter-v$version-win-x64.zip"
+
+          if (-not (Test-Path -LiteralPath $notes -PathType Leaf)) {
+            throw "Release notes file is missing: $notes"
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "notes=$notes" >> $env:GITHUB_OUTPUT
+          "installer=$installer" >> $env:GITHUB_OUTPUT
+          "portable=$portable" >> $env:GITHUB_OUTPUT
+
+      - name: Guard against duplicate release or orphan tag
+        id: gate
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.meta.outputs.tag }}"
+
+          gh release view $tag --repo $env:GITHUB_REPOSITORY --json tagName *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "Release $tag already exists; nothing to build."
+            "exists=true" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$tag" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Tag $tag exists without a release. Refusing to reuse an unverified tag."
+          }
+
+          "exists=false" >> $env:GITHUB_OUTPUT
+
+      - name: Restore
+        if: steps.gate.outputs.exists != 'true'
+        run: dotnet restore FolderConverter.sln
+
+      - name: Build
+        if: steps.gate.outputs.exists != 'true'
+        run: dotnet build FolderConverter.sln -c Release --no-restore
+
+      - name: Test
+        if: steps.gate.outputs.exists != 'true'
+        run: dotnet test FolderConverter.sln -c Release --no-build --logger "trx;LogFileName=test-results.trx"
+
+      - name: Install Inno Setup 6
+        if: steps.gate.outputs.exists != 'true'
+        shell: pwsh
+        run: |
+          $knownPaths = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+          )
+
+          $hasCompiler = (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -or
+            ($knownPaths | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
+
+          if (-not $hasCompiler) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) {
+              throw "Inno Setup installation failed."
+            }
+          }
+
+      - name: Build installer and portable package
+        if: steps.gate.outputs.exists != 'true'
+        shell: pwsh
+        run: |
+          .\scripts\build-installer.ps1
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release packaging failed."
+          }
+
+      - name: Validate packages and calculate SHA-256
+        if: steps.gate.outputs.exists != 'true'
+        id: package
+        shell: pwsh
+        run: |
+          $installer = Join-Path $PWD "artifacts\installer\win-x64\${{ steps.meta.outputs.installer }}"
+          $portable = Join-Path $PWD "artifacts\portable\win-x64\${{ steps.meta.outputs.portable }}"
+          $checksums = Join-Path $PWD "artifacts\SHA256SUMS.txt"
+
+          foreach ($path in @($installer, $portable)) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Expected release file is missing: $path"
+            }
+            if ((Get-Item -LiteralPath $path).Length -le 0) {
+              throw "Release file is empty: $path"
+            }
+          }
+
+          $installerHash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          $portableHash = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          @(
+            "$installerHash  $([System.IO.Path]::GetFileName($installer))",
+            "$portableHash  $([System.IO.Path]::GetFileName($portable))"
+          ) | Set-Content -LiteralPath $checksums -Encoding ascii
+
+          "installer_path=$installer" >> $env:GITHUB_OUTPUT
+          "portable_path=$portable" >> $env:GITHUB_OUTPUT
+          "checksums_path=$checksums" >> $env:GITHUB_OUTPUT
+
+          Write-Output "Installer SHA-256: $installerHash"
+          Write-Output "Portable SHA-256: $portableHash"
+
+      - name: Create Draft Pre-release and upload assets directly
+        if: steps.gate.outputs.exists != 'true'
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.meta.outputs.tag }}"
+          $title = "Zlet Batch Converter $tag"
+
+          gh release create $tag `
+            "${{ steps.package.outputs.installer_path }}" `
+            "${{ steps.package.outputs.portable_path }}" `
+            "${{ steps.package.outputs.checksums_path }}" `
+            --repo $env:GITHUB_REPOSITORY `
+            --target $env:GITHUB_SHA `
+            --title $title `
+            --notes-file "${{ steps.meta.outputs.notes }}" `
+            --draft `
+            --prerelease
+
+          if ($LASTEXITCODE -ne 0) {
+            gh release delete $tag --repo $env:GITHUB_REPOSITORY --yes --cleanup-tag *> $null
+            throw "Draft Release creation or asset upload failed."
+          }
+
+      - name: Remove local packaging files
+        if: always() && steps.gate.outputs.exists != 'true'
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath "artifacts") {
+            Remove-Item -LiteralPath "artifacts" -Recurse -Force
+          }
+
+      - name: Release summary
+        if: always()
+        shell: pwsh
+        run: |
+          if ("${{ steps.gate.outputs.exists }}" -eq "true") {
+            "## Draft Release" >> $env:GITHUB_STEP_SUMMARY
+            "Release `${{ steps.meta.outputs.tag }}` already exists. No duplicate build was created." >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+
+          "## Draft Release `${{ steps.meta.outputs.tag }}`" >> $env:GITHUB_STEP_SUMMARY
+          "- Target commit: `$env:GITHUB_SHA`" >> $env:GITHUB_STEP_SUMMARY
+          "- Installer and portable ZIP were uploaded directly to GitHub Release." >> $env:GITHUB_STEP_SUMMARY
+          "- No Actions artifacts were created." >> $env:GITHUB_STEP_SUMMARY
+          "- Local packaging files were removed from the temporary runner." >> $env:GITHUB_STEP_SUMMARY
+          "- Release remains Draft + Pre-release and is not published automatically." >> $env:GITHUB_STEP_SUMMARY
+          "- Real Microsoft Office integration and manual clean-machine verification were not run on the hosted runner." >> $env:GITHUB_STEP_SUMMARY

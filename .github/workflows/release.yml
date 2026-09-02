@@ -70,18 +70,21 @@ jobs:
           $tag = "${{ steps.meta.outputs.tag }}"
 
           gh release view $tag --repo $env:GITHUB_REPOSITORY --json tagName *> $null
-          if ($LASTEXITCODE -eq 0) {
+          $releaseExit = $LASTEXITCODE
+          if ($releaseExit -eq 0) {
             Write-Output "Release $tag already exists; nothing to build."
             "exists=true" >> $env:GITHUB_OUTPUT
             exit 0
           }
 
           gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$tag" *> $null
-          if ($LASTEXITCODE -eq 0) {
+          $tagExit = $LASTEXITCODE
+          if ($tagExit -eq 0) {
             throw "Tag $tag exists without a release. Refusing to reuse an unverified tag."
           }
 
           "exists=false" >> $env:GITHUB_OUTPUT
+          exit 0
 
       - name: Restore
         if: steps.gate.outputs.exists != 'true'
@@ -159,6 +162,7 @@ jobs:
 
       - name: Create Draft Pre-release and upload assets directly
         if: steps.gate.outputs.exists != 'true'
+        id: publish
         shell: pwsh
         run: |
           $tag = "${{ steps.meta.outputs.tag }}"
@@ -180,6 +184,8 @@ jobs:
             throw "Draft Release creation or asset upload failed."
           }
 
+          "created=true" >> $env:GITHUB_OUTPUT
+
       - name: Remove local packaging files
         if: always() && steps.gate.outputs.exists != 'true'
         shell: pwsh
@@ -193,15 +199,29 @@ jobs:
         shell: pwsh
         run: |
           if ("${{ steps.gate.outputs.exists }}" -eq "true") {
-            "## Draft Release" >> $env:GITHUB_STEP_SUMMARY
-            "Release `${{ steps.meta.outputs.tag }}` already exists. No duplicate build was created." >> $env:GITHUB_STEP_SUMMARY
+            @(
+              "## Draft Release",
+              "Release ${{ steps.meta.outputs.tag }} already exists. No duplicate build was created."
+            ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
             exit 0
           }
 
-          "## Draft Release `${{ steps.meta.outputs.tag }}`" >> $env:GITHUB_STEP_SUMMARY
-          "- Target commit: `$env:GITHUB_SHA`" >> $env:GITHUB_STEP_SUMMARY
-          "- Installer and portable ZIP were uploaded directly to GitHub Release." >> $env:GITHUB_STEP_SUMMARY
-          "- No Actions artifacts were created." >> $env:GITHUB_STEP_SUMMARY
-          "- Local packaging files were removed from the temporary runner." >> $env:GITHUB_STEP_SUMMARY
-          "- Release remains Draft + Pre-release and is not published automatically." >> $env:GITHUB_STEP_SUMMARY
-          "- Real Microsoft Office integration and manual clean-machine verification were not run on the hosted runner." >> $env:GITHUB_STEP_SUMMARY
+          if ("${{ steps.publish.outputs.created }}" -eq "true") {
+            @(
+              "## Draft Release ${{ steps.meta.outputs.tag }}",
+              "- Target commit: $env:GITHUB_SHA",
+              "- Installer and portable ZIP were uploaded directly to GitHub Release.",
+              "- No Actions artifacts were created.",
+              "- Local packaging files were removed from the temporary runner.",
+              "- Release remains Draft + Pre-release and is not published automatically.",
+              "- Real Microsoft Office integration and manual clean-machine verification were not run on the hosted runner."
+            ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+
+          @(
+            "## Draft Release failed",
+            "Draft Release ${{ steps.meta.outputs.tag }} was not prepared successfully.",
+            "See the failed workflow step above. No successful release preparation is being claimed."
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          exit 0

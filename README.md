@@ -1,32 +1,38 @@
-# Zlet Batch Converter
+<p align="center">
+  <img src="docs/assets/zlet-batch-converter-hero.svg" alt="Zlet Batch Converter — local Windows batch file converter from Zlet Labs" width="100%">
+</p>
 
-![Version](https://img.shields.io/badge/version-v0.0.2-blue)
-![Status](https://img.shields.io/badge/status-PRE--ALPHA-orange)
-![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4)
-![.NET](https://img.shields.io/badge/.NET-8-512BD4)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Processing](https://img.shields.io/badge/processing-local%20only-success)
+<p align="center">
+  <strong>English</strong> · <a href="README_RU.md">Русский</a>
+</p>
 
-**English** · [Русский](README_RU.md)
+<p align="center">
+  <img alt="Version v0.0.2" src="https://img.shields.io/badge/version-v0.0.2-2563eb">
+  <img alt="PRE-ALPHA" src="https://img.shields.io/badge/status-PRE--ALPHA-f59e0b">
+  <img alt="Windows x64" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4">
+  <img alt="Local processing" src="https://img.shields.io/badge/processing-local%20only-16a34a">
+  <img alt="MIT License" src="https://img.shields.io/badge/license-MIT-22c55e">
+</p>
 
-Zlet Batch Converter is a small local Windows utility for batch-processing files in folders and subfolders. It converts supported legacy Microsoft Office formats, safely copies already-modern Office files, and keeps processing on your computer.
+Zlet Batch Converter is a small local Windows utility for batch-processing files in folders and subfolders. It converts supported legacy Microsoft Office files, safely copies already-modern Office files, preserves relative folder structure, and keeps document processing on your computer.
 
-**No accounts. No cloud uploads. No document content is sent anywhere.**
+> **v0.0.2 is PRE-ALPHA.** The installer is currently unsigned, so Windows may show an Unknown publisher or SmartScreen warning. Microsoft Office is not included.
 
-> **Current source version: v0.0.2 PRE-ALPHA.** Verified binaries are published separately on the GitHub Releases page after manual verification. If `v0.0.2` is not listed there yet, the repository source is newer than the latest published package.
+## Download v0.0.2
 
-## What it does
+| Windows installer | Portable ZIP |
+|---|---|
+| **[⬇ Download installer](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/ZletBatchConverter-v0.0.2-Setup-win-x64.exe)** | **[📦 Download portable](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/ZletBatchConverter-v0.0.2-win-x64.zip)** |
+| `ZletBatchConverter-v0.0.2-Setup-win-x64.exe` | `ZletBatchConverter-v0.0.2-win-x64.zip` |
 
-- Scans a selected folder and its subfolders.
-- Shows a preview before processing.
-- Lets you select which operations to run.
-- Converts supported legacy Office files using the installed Microsoft Office applications.
-- Safely copies modern Office files without converting them.
-- Preserves relative subfolder structure.
-- Never silently overwrites an existing output file or directory.
-- Shows per-file status, progress, source size, and execution time.
-- Supports stopping an active batch without killing unrelated user Office processes.
-- Can copy a clean list of planned conversions using relative paths only.
+[Release notes](https://github.com/zlet-labs/batch-converter/releases/tag/v0.0.2) · [SHA-256 checksums](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/SHA256SUMS.txt)
+
+### Why use it?
+
+| 🔒 Local | ⚡ Batch | 🛡 Defensive |
+|---|---|---|
+| No accounts, no cloud uploads | Scan folders and subfolders in one run | Existing outputs are not silently overwritten |
+| Document contents stay on your PC | Select only the operations you want | Office processes are never killed by name alone |
 
 ## Supported formats
 
@@ -35,45 +41,43 @@ Zlet Batch Converter is a small local Windows utility for batch-processing files
 | `.doc` | `.docx` | Microsoft Word installed |
 | `.xls` | `.xlsx` | Microsoft Excel installed |
 | `.ppt` | `.pptx` | Microsoft PowerPoint installed |
-| `.docx`, `.xlsx`, `.pptx` | unchanged safe copy | Microsoft Office not required |
-| `.json` | `.txt` or `.md` | Microsoft Office not required |
+| `.docx`, `.xlsx`, `.pptx` | unchanged safe copy | Office not required |
+| `.json` | `.txt` or `.md` | Office not required |
 
-Word, Excel, and PowerPoint are detected independently. If one application is missing, only the corresponding legacy format is unavailable; the rest of the batch can still run.
+Word, Excel, and PowerPoint are detected independently. If one Office application is missing, only the corresponding legacy conversion becomes unavailable; the rest of the batch can still run.
 
-Microsoft Office is **not bundled** with Zlet Batch Converter.
-
-### PowerPoint safety restriction
-
-PowerPoint uses a shared COM process. To avoid interfering with a user's open presentation, PPT conversion is refused while `POWERPNT` is already running. Close PowerPoint and retry the conversion.
-
-This restriction does not block DOC/XLS conversion or unchanged PPTX copying.
+> **PowerPoint safety:** PPT conversion is refused while user PowerPoint is already running. This avoids interfering with an open presentation. DOC/XLS conversion and unchanged PPTX copying remain available.
 
 ## Quick start
 
-1. Download a verified package from [GitHub Releases](https://github.com/zlet-labs/batch-converter/releases), or build the current source yourself.
+1. Download the installer or portable ZIP above.
 2. Run `ZletBatchConverter.exe`.
-3. Choose the source folder.
-4. Scan files and review the planned actions.
-5. Select the operations you want.
-6. Choose the output location/mode and start processing.
-7. Review the final summary and generated files.
+3. Choose a source folder and scan it.
+4. Review Preview and select the operations you want.
+5. Choose the output location/mode and start processing.
+6. Review per-file results and the final batch summary.
 
-For packaged builds, .NET is self-contained. You do not need to install the .NET runtime separately.
+Packaged builds are self-contained for .NET 8, so the .NET runtime does not need to be installed separately.
 
-## Downloads and releases
+## What you get
 
-Published packages live on the [Releases page](https://github.com/zlet-labs/batch-converter/releases).
+- Preview before processing.
+- Selection of individual operations before execution.
+- Relative subfolder structure preserved in output.
+- Per-file status, stage progress, source size, and execution time.
+- Safe Stop that prevents new queued operations from starting.
+- Conversion list copy using relative paths only.
+- Separate final counters for converted, copied, failed, conflict, unavailable, skipped, and unselected items.
+- Safer multi-file Office processing through reusable worker/session handling where appropriate.
 
-A release may contain:
+## Limitations
 
-- `ZletBatchConverter-v<version>-Setup-win-x64.exe` — Windows installer;
-- `ZletBatchConverter-v<version>-win-x64.zip` — portable package.
+Zlet Batch Converter is still **PRE-ALPHA**. Complex, corrupted, password-protected, or unsupported legacy documents may fail to convert. Conversion fidelity depends on the installed Microsoft Office version and document features.
 
-Only use files attached to an actual GitHub Release. Do not treat a source version number in the repository as proof that matching binaries have already been published.
+Original files are not intentionally modified, but keep backups of important data when testing pre-release software.
 
-The installer is currently unsigned, so Windows may show an unknown-publisher or SmartScreen warning.
-
-## Safety and privacy
+<details>
+<summary><strong>Safety and privacy details</strong></summary>
 
 The converter is intentionally local-first and defensive around user files.
 
@@ -93,12 +97,15 @@ The converter is intentionally local-first and defensive around user files.
 
 Technical diagnostics may contain error codes and process metadata. They must not contain document contents, secrets, or full local document paths.
 
-## Build from source
+</details>
+
+<details>
+<summary><strong>Build from source and package locally</strong></summary>
 
 Requirements:
 
-- Windows x64;
-- .NET 8 SDK.
+- Windows x64
+- .NET 8 SDK
 
 ```powershell
 dotnet restore FolderConverter.sln
@@ -106,31 +113,30 @@ dotnet build FolderConverter.sln -c Release
 dotnet test FolderConverter.sln -c Release
 ```
 
-## Build a portable package
+Build the portable package:
 
 ```powershell
 .\scripts\publish-portable.ps1
 ```
 
-For v0.0.2 the expected ZIP name is:
+Expected v0.0.2 ZIP:
 
 ```text
 artifacts/portable/win-x64/ZletBatchConverter-v0.0.2-win-x64.zip
 ```
 
-The portable package includes the self-contained .NET 8 application and worker. It does not include Microsoft Office, Python, Java, source files, or test fixtures.
-
-## Build the Windows installer
-
-Installer creation uses Inno Setup 6:
+Build the Windows installer with Inno Setup 6:
 
 ```powershell
 .\scripts\build-installer.ps1
 ```
 
-The script first builds the portable payload and then creates the Windows x64 installer. It also prints the installer SHA-256 and Authenticode status.
+The installer script first builds the portable payload, then creates the Windows x64 installer and prints its SHA-256 and Authenticode status.
 
-## Office integration tests
+</details>
+
+<details>
+<summary><strong>Real Microsoft Office integration tests</strong></summary>
 
 Real Office integration tests are opt-in because they require installed Microsoft Office and real legacy fixtures:
 
@@ -145,25 +151,12 @@ dotnet test FolderConverter.sln -c Release --filter Category=OfficeIntegration
 
 If an Office application or required fixture is missing, the corresponding integration test is skipped rather than counted as passed.
 
-## Limitations
-
-Zlet Batch Converter is still **PRE-ALPHA**.
-
-Complex, corrupted, password-protected, or unsupported legacy documents may fail to convert. Conversion fidelity depends on the installed Microsoft Office version and the document features used. The project does not promise successful legacy conversion on a computer without the corresponding Office application.
-
-Original files are not intentionally modified, but keep backups of important data when testing pre-release software.
-
-## Verification
-
-Before publishing release binaries, follow the manual clean-machine checklist:
-
-[docs/manual-clean-machine-verification.md](docs/manual-clean-machine-verification.md)
+</details>
 
 ## Project
 
 Zlet Batch Converter is a **Zlet Labs** project: small, practical, self-serve tools without unnecessary SaaS machinery.
 
-- Issues: [GitHub Issues](https://github.com/zlet-labs/batch-converter/issues)
-- Releases: [GitHub Releases](https://github.com/zlet-labs/batch-converter/releases)
-- License: [MIT](LICENSE)
-- Russian README: [README_RU.md](README_RU.md)
+[Zlet Labs](https://zlet.app/) · [GitHub Issues](https://github.com/zlet-labs/batch-converter/issues) · [All releases](https://github.com/zlet-labs/batch-converter/releases) · [MIT License](LICENSE)
+
+Manual release verification checklist: [docs/manual-clean-machine-verification.md](docs/manual-clean-machine-verification.md)

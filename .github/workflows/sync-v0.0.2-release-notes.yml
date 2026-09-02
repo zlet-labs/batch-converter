@@ -55,7 +55,7 @@ jobs:
               'name': os.environ['RELEASE_NAME'],
               'target_commitish': os.environ['EXPECTED_TARGET'],
               'draft': False,
-              'prerelease': True,
+              'prerelease': False,
           }
           for key, value in expected.items():
               if release.get(key) != value:
@@ -127,7 +127,7 @@ jobs:
               'name': os.environ['RELEASE_NAME'],
               'target_commitish': os.environ['EXPECTED_TARGET'],
               'draft': False,
-              'prerelease': True,
+              'prerelease': False,
           }
           for key, value in expected_metadata.items():
               if release.get(key) != value:

@@ -1,3 +1,5 @@
+# Zlet Batch Converter
+
 <p align="center">
   <img src="docs/assets/zlet-batch-converter-hero.svg" alt="Zlet Batch Converter — local Windows batch file converter from Zlet Labs" width="100%">
 </p>

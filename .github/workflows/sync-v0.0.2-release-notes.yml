@@ -1,0 +1,156 @@
+name: Sync v0.0.2 Release Notes
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/sync-v0.0.2-release-notes.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  sync-release-notes:
+    name: Validate and sync published release notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TAG: v0.0.2
+      RELEASE_NAME: Zlet Batch Converter v0.0.2
+      EXPECTED_TARGET: 21efb0e53139864064d699f2faf520af1f7354d8
+      NOTES_FILE: docs/RELEASE_NOTES_v0.0.2.md
+      INSTALLER_NAME: ZletBatchConverter-v0.0.2-Setup-win-x64.exe
+      INSTALLER_SIZE: '50314546'
+      INSTALLER_DIGEST: sha256:519855e75ed63385b914bf7cb37efa7a42717728ae6420e6291dcb27e8ed58d5
+      PORTABLE_NAME: ZletBatchConverter-v0.0.2-win-x64.zip
+      PORTABLE_SIZE: '72465992'
+      PORTABLE_DIGEST: sha256:998854d1e64f605fd140ba60c52d6e22257265905fdb4e254a80cfe57e2643b0
+      CHECKSUM_NAME: SHA256SUMS.txt
+      CHECKSUM_SIZE: '216'
+      CHECKSUM_DIGEST: sha256:ccccf5746cc8d5f7bed151d8078d2d4c24e260328d1355ee560cc818d5e60459
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate exact published release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -s "$NOTES_FILE"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" > release-before.json
+
+          python - <<'PY'
+          import json
+          import os
+
+          with open('release-before.json', encoding='utf-8') as f:
+              release = json.load(f)
+
+          expected = {
+              'tag_name': os.environ['TAG'],
+              'name': os.environ['RELEASE_NAME'],
+              'target_commitish': os.environ['EXPECTED_TARGET'],
+              'draft': False,
+              'prerelease': True,
+          }
+          for key, value in expected.items():
+              if release.get(key) != value:
+                  raise SystemExit(f"Release guard failed for {key}: {release.get(key)!r} != {value!r}")
+
+          if not release.get('published_at'):
+              raise SystemExit('Release must already be published before notes sync.')
+
+          expected_assets = {
+              os.environ['INSTALLER_NAME']: (int(os.environ['INSTALLER_SIZE']), os.environ['INSTALLER_DIGEST']),
+              os.environ['PORTABLE_NAME']: (int(os.environ['PORTABLE_SIZE']), os.environ['PORTABLE_DIGEST']),
+              os.environ['CHECKSUM_NAME']: (int(os.environ['CHECKSUM_SIZE']), os.environ['CHECKSUM_DIGEST']),
+          }
+          assets = release.get('assets') or []
+          actual_names = {asset.get('name') for asset in assets}
+          if actual_names != set(expected_assets):
+              raise SystemExit(f"Unexpected release asset set: {sorted(actual_names)}")
+
+          for asset in assets:
+              name = asset['name']
+              expected_size, expected_digest = expected_assets[name]
+              if asset.get('state') != 'uploaded':
+                  raise SystemExit(f"Asset {name} is not uploaded.")
+              if asset.get('size') != expected_size:
+                  raise SystemExit(f"Asset {name} size changed.")
+              if asset.get('digest') != expected_digest:
+                  raise SystemExit(f"Asset {name} digest changed.")
+          PY
+
+      - name: Sync release body from versioned notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RELEASE_ID="$(jq -r '.id' release-before.json)"
+          export RELEASE_ID
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          body = Path(os.environ['NOTES_FILE']).read_text(encoding='utf-8')
+          Path('release-payload.json').write_text(
+              json.dumps({'body': body}, ensure_ascii=False),
+              encoding='utf-8',
+          )
+          PY
+
+          gh api --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            --input release-payload.json > release-after.json
+
+      - name: Verify release after sync
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          with open('release-after.json', encoding='utf-8') as f:
+              release = json.load(f)
+
+          expected_metadata = {
+              'tag_name': os.environ['TAG'],
+              'name': os.environ['RELEASE_NAME'],
+              'target_commitish': os.environ['EXPECTED_TARGET'],
+              'draft': False,
+              'prerelease': True,
+          }
+          for key, value in expected_metadata.items():
+              if release.get(key) != value:
+                  raise SystemExit(f"Post-sync guard failed for {key}.")
+
+          expected_body = Path(os.environ['NOTES_FILE']).read_text(encoding='utf-8').replace('\r\n', '\n').rstrip('\n')
+          actual_body = (release.get('body') or '').replace('\r\n', '\n').rstrip('\n')
+          if actual_body != expected_body:
+              raise SystemExit('Published release body does not match versioned release notes.')
+
+          expected_assets = {
+              os.environ['INSTALLER_NAME']: (int(os.environ['INSTALLER_SIZE']), os.environ['INSTALLER_DIGEST']),
+              os.environ['PORTABLE_NAME']: (int(os.environ['PORTABLE_SIZE']), os.environ['PORTABLE_DIGEST']),
+              os.environ['CHECKSUM_NAME']: (int(os.environ['CHECKSUM_SIZE']), os.environ['CHECKSUM_DIGEST']),
+          }
+          assets = release.get('assets') or []
+          if {asset.get('name') for asset in assets} != set(expected_assets):
+              raise SystemExit('Release assets changed during notes sync.')
+          for asset in assets:
+              size, digest = expected_assets[asset['name']]
+              if asset.get('size') != size or asset.get('digest') != digest or asset.get('state') != 'uploaded':
+                  raise SystemExit(f"Asset {asset['name']} changed during notes sync.")
+
+          if not release.get('published_at'):
+              raise SystemExit('Published timestamp disappeared after notes sync.')
+          PY

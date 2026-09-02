@@ -1,3 +1,5 @@
+# Zlet Batch Converter
+
 <p align="center">
   <img src="docs/assets/zlet-batch-converter-hero.svg" alt="Zlet Batch Converter — локальный пакетный конвертер файлов для Windows от Zlet Labs" width="100%">
 </p>

@@ -151,7 +151,7 @@ Zlet Batch Converter is still **PRE-ALPHA**.
 
 Complex, corrupted, password-protected, or unsupported legacy documents may fail to convert. Conversion fidelity depends on the installed Microsoft Office version and the document features used. The project does not promise successful legacy conversion on a computer without the corresponding Office application.
 
-Original files are not intentionally modified, but keep backups of important data when testing pre-release software. Humanity has already invented enough ways to lose documents without help from a converter.
+Original files are not intentionally modified, but keep backups of important data when testing pre-release software.
 
 ## Verification
 

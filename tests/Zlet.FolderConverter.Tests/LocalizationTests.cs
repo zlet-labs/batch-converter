@@ -153,6 +153,38 @@ public sealed class LocalizationTests : IDisposable
         Assert.Equal(en, OperationMessageLocalizer.Localize(OperationStatus.Failed, ConversionTarget.Docx, "raw", errorCode, localization));
     }
 
+    [Fact]
+    public void Operation_message_raises_change_and_relocalizes_without_changing_diagnostics()
+    {
+        var localization = LocalizationService.CreateStandalone(AppLanguage.Russian);
+        var operation = new PlannedOperation("C:\\source\\nested\\legacy.doc", "nested\\legacy.doc", SourceFormat.Doc,
+            ConversionTarget.Docx, ".docx", "C:\\result\\nested\\legacy.docx", true,
+            OperationStatus.Failed, "Недопустимый путь результата.", "C:\\result", "C:\\source", 1);
+        var result = new ConversionResult(operation, OperationStatus.Failed, operation.Message,
+            new ConversionDiagnostic("unsafe_target"));
+        var row = new OperationRowViewModel(operation, result, localization: localization);
+        var changedProperties = new List<string?>();
+        row.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
+
+        Assert.Equal("Недопустимый путь результата.", row.Message);
+        Assert.Equal("Ошибка: Недопустимый путь результата.", row.Status);
+
+        localization.Apply(AppLanguage.English);
+        row.RefreshLocalization();
+
+        Assert.Contains(nameof(OperationRowViewModel.Message), changedProperties);
+        Assert.Equal("The result path is invalid.", row.Message);
+        Assert.Equal("Failed: The result path is invalid.", row.Status);
+        Assert.Equal("C:\\source\\nested\\legacy.doc", row.SourcePath);
+        Assert.Equal("nested\\legacy.docx", row.ResultPath);
+        Assert.Equal("unsafe_target", row.Result!.Diagnostic!.ErrorCode);
+
+        localization.Apply(AppLanguage.Russian);
+        row.RefreshLocalization();
+        Assert.Equal("Недопустимый путь результата.", row.Message);
+        Assert.Equal("Ошибка: Недопустимый путь результата.", row.Status);
+    }
+
     [Theory]
     [InlineData(OperationStatus.Ready, ConversionTarget.Copy, "Будет скопирован без изменений.", "Ready to copy unchanged.")]
     [InlineData(OperationStatus.Ready, ConversionTarget.Docx, "Готово к преобразованию.", "Ready to process.")]

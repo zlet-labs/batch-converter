@@ -258,6 +258,7 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(FileSizeText));
         OnPropertyChanged(nameof(ExecutionTimeText));
         OnPropertyChanged(nameof(Status));
+        OnPropertyChanged(nameof(Message));
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>

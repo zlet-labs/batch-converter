@@ -50,7 +50,7 @@ public sealed class ProductMetadataTests
 
         Assert.Contains("# Zlet Converter", readme);
         Assert.Contains("v0.0.2", readme);
-        Assert.Contains("https://github.com/zlet-labs/batch-converter", readme);
+        Assert.Contains("https://github.com/zlet-labs/zlet-converter", readme);
         Assert.Contains("ZletConverter-v0.0.2-win-x64.zip", portableReadme);
         Assert.Contains("previous public name `Zlet Batch Converter`", readme);
         Assert.DoesNotContain("Zlet Folder Converter", readme);

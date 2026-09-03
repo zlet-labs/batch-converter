@@ -124,9 +124,17 @@ public partial class MainWindow : Window
 
     private async void ConvertButton_Click(object sender, RoutedEventArgs e)
     {
+        var started = DateTimeOffset.Now;
         try
         {
             await _viewModel.ConvertAsync();
+            if (_viewModel.HasFinalReport)
+            {
+                await ConversionReportWriter.WriteAsync(
+                    _viewModel,
+                    started,
+                    DateTimeOffset.Now);
+            }
         }
         catch (OperationCanceledException)
         {

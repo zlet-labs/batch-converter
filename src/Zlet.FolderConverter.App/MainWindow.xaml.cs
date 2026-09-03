@@ -63,7 +63,7 @@ public partial class MainWindow : Window
         }
         catch (Exception)
         {
-            _viewModel.AddError(Loc.Get("ScanFailed"));
+            _viewModel.AddLocalizedError("ScanFailed");
             _viewModel.SetLocalizedState("ScanFailedState");
         }
     }
@@ -103,7 +103,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            _viewModel.AddError(Loc.Get("CopyListFailed"));
+            _viewModel.AddLocalizedError("CopyListFailed");
         }
     }
 
@@ -120,7 +120,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            _viewModel.AddError(Loc.Get("CopyPathFailed"));
+            _viewModel.AddLocalizedError("CopyPathFailed");
         }
     }
 
@@ -136,7 +136,7 @@ public partial class MainWindow : Window
         }
         catch (Exception)
         {
-            _viewModel.AddError(Loc.Get("ConversionFailed"));
+            _viewModel.AddLocalizedError("ConversionFailed");
             _viewModel.SetLocalizedState("ConversionFailedState");
         }
     }
@@ -205,10 +205,16 @@ public partial class MainWindow : Window
         }
         catch
         {
-            _viewModel.AddError(Loc.Get("OpenResultFailed"));
+            _viewModel.AddLocalizedError("OpenResultFailed");
         }
     }
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e) =>
         new SettingsWindow { Owner = this }.ShowDialog();
+
+    public void ShowSettingsSaveFailure()
+    {
+        _viewModel.SetLocalizedState("SettingsSaveFailed");
+        _viewModel.AddLocalizedError("SettingsSaveFailed");
+    }
 }

@@ -15,14 +15,15 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
     private TimeSpan? _liveExecutionElapsed;
     private int? _operationPercent;
     private bool _isNotSelected;
-    private readonly LocalizationService _localization = LocalizationService.Current;
+    private readonly LocalizationService _localization;
 
     public OperationRowViewModel(
         PlannedOperation operation,
         ConversionResult? result = null,
         bool? isSelected = null,
         bool isNotSelected = false,
-        Action? selectionChanged = null)
+        Action? selectionChanged = null,
+        LocalizationService? localization = null)
     {
         Operation = result is null
             ? operation
@@ -31,6 +32,7 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         _isNotSelected = isNotSelected;
         Result = result;
         _selectionChanged = selectionChanged;
+        _localization = localization ?? LocalizationService.Current;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -87,7 +89,12 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         get
         {
             if (_isNotSelected && Operation.Status == OperationStatus.Ready) return _localization.Get("StatusNotSelected");
-            var text = LocalizeStatus(Operation.Status, Operation.Target, Operation.Message);
+            var text = LocalizeStatus(
+                Operation.Status,
+                Operation.Target,
+                Operation.Message,
+                Result?.Diagnostic?.ErrorCode ?? string.Empty,
+                _localization);
             return _operationPercent.HasValue ? $"{text} · {_operationPercent.Value.ToString(_localization.Culture)}%" : text;
         }
     }
@@ -102,7 +109,12 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         OperationStatus.Cancelled or OperationStatus.NotProcessed => "Cancelled",
         _ => "Neutral"
     };
-    public string Message => Operation.Message;
+    public string Message => OperationMessageLocalizer.Localize(
+        Operation.Status,
+        Operation.Target,
+        Operation.Message,
+        Result?.Diagnostic?.ErrorCode,
+        _localization);
 
     public void BeginExecution(long timestamp, int percent)
     {
@@ -182,24 +194,33 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         OperationStatus status,
         ConversionTarget target = ConversionTarget.Skip,
         string message = "",
-        string errorCode = "") => status switch
+        string errorCode = "",
+        LocalizationService? localization = null)
     {
-        OperationStatus.Ready when target == ConversionTarget.Copy => LocalizationService.Current.Get("StatusReadyCopy"),
-        OperationStatus.Ready => LocalizationService.Current.Get("StatusReadyConvert"),
-        OperationStatus.Skipped => LocalizationService.Current.Get("StatusSkipped"),
-        OperationStatus.Converting => LocalizationService.Current.Get("StatusConverting"),
-        OperationStatus.Succeeded when target == ConversionTarget.Copy => LocalizationService.Current.Get("StatusCopied"),
-        OperationStatus.Succeeded => LocalizationService.Current.Get("StatusConverted"),
-        OperationStatus.Conflict => LocalizationService.Current.Get("StatusConflict"),
-        OperationStatus.Failed when !string.IsNullOrWhiteSpace(message) => LocalizationService.Current.Format("StatusFailedDetail", message),
-        OperationStatus.Failed => LocalizationService.Current.Get("StatusFailed"),
-        OperationStatus.EngineUnavailable or OperationStatus.Unsupported
-            when !string.IsNullOrWhiteSpace(message) => LocalizationService.Current.Format("StatusUnavailableDetail", message),
-        OperationStatus.EngineUnavailable or OperationStatus.Unsupported => LocalizationService.Current.Get("StatusUnavailable"),
-        OperationStatus.Cancelled => LocalizationService.Current.Get("StatusCancelled"),
-        OperationStatus.NotProcessed => LocalizationService.Current.Get("StatusNotProcessed"),
-        _ => LocalizationService.Current.Get("StatusUnknown")
-    };
+        localization ??= LocalizationService.Current;
+        return status switch
+        {
+            OperationStatus.Ready when target == ConversionTarget.Copy => localization.Get("StatusReadyCopy"),
+            OperationStatus.Ready => localization.Get("StatusReadyConvert"),
+            OperationStatus.Skipped => localization.Get("StatusSkipped"),
+            OperationStatus.Converting => localization.Get("StatusConverting"),
+            OperationStatus.Succeeded when target == ConversionTarget.Copy => localization.Get("StatusCopied"),
+            OperationStatus.Succeeded => localization.Get("StatusConverted"),
+            OperationStatus.Conflict => localization.Get("StatusConflict"),
+            OperationStatus.Failed when !string.IsNullOrWhiteSpace(message) || !string.IsNullOrWhiteSpace(errorCode) => localization.Format(
+                "StatusFailedDetail",
+                OperationMessageLocalizer.Localize(status, target, message, errorCode, localization)),
+            OperationStatus.Failed => localization.Get("StatusFailed"),
+            OperationStatus.EngineUnavailable or OperationStatus.Unsupported
+                when !string.IsNullOrWhiteSpace(message) || !string.IsNullOrWhiteSpace(errorCode) => localization.Format(
+                    "StatusUnavailableDetail",
+                    OperationMessageLocalizer.Localize(status, target, message, errorCode, localization)),
+            OperationStatus.EngineUnavailable or OperationStatus.Unsupported => localization.Get("StatusUnavailable"),
+            OperationStatus.Cancelled => localization.Get("StatusCancelled"),
+            OperationStatus.NotProcessed => localization.Get("StatusNotProcessed"),
+            _ => localization.Get("StatusUnknown")
+        };
+    }
 
     public static string FormatFileSize(long bytes)
     {

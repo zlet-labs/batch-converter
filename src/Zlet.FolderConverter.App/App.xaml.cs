@@ -16,24 +16,29 @@ public partial class App : System.Windows.Application
 
         if (bootstrapLanguage is not null)
         {
-            if (saved is null && AppLanguage.IsSupported(bootstrapLanguage)) settings.SaveLanguage(bootstrapLanguage);
-            Shutdown();
+            var result = saved is null && AppLanguage.IsSupported(bootstrapLanguage)
+                ? settings.TrySaveLanguage(bootstrapLanguage)
+                : SettingsSaveResult.Saved;
+            Shutdown(result.Success ? 0 : 1);
             return;
         }
 
         var decision = StartupLanguageResolver.Resolve(explicitLanguage, saved);
         var language = decision.Language;
+        var saveResult = SettingsSaveResult.Saved;
         if (decision.ChooserRequired)
         {
             var chooser = new LanguageChooserWindow();
             if (chooser.ShowDialog() != true || chooser.SelectedLanguage is null) { Shutdown(); return; }
             language = chooser.SelectedLanguage;
-            settings.SaveLanguage(language);
+            saveResult = settings.TrySaveLanguage(language);
         }
-        else if (decision.PersistExplicit) settings.SaveLanguage(language!);
+        else if (decision.PersistExplicit) saveResult = settings.TrySaveLanguage(language!);
 
         LocalizationService.Current.Apply(language!);
-        MainWindow = new MainWindow();
+        var mainWindow = new MainWindow();
+        if (!saveResult.Success) mainWindow.ShowSettingsSaveFailure();
+        MainWindow = mainWindow;
         MainWindow.Show();
         ShutdownMode = ShutdownMode.OnMainWindowClose;
     }

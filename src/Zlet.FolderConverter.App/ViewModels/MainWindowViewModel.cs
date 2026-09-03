@@ -19,6 +19,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly TimeProvider _timeProvider;
     private readonly DispatcherTimer _progressTimer;
     private readonly LocalizationService _localization;
+    private readonly List<LocalizedErrorEntry> _errorEntries = [];
     private string _selectedFolder = string.Empty;
     private string _sourcePathError = string.Empty;
     private bool _includeSubfolders = true;
@@ -84,10 +85,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IConversionPlanner conversionPlanner,
         IConversionProcessor? conversionProcessor = null,
         IMicrosoftOfficeCapabilityDetector? officeCapabilityDetector = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        LocalizationService? localization = null)
     {
         _folderScanner = folderScanner;
-        _localization = LocalizationService.Current;
+        _localization = localization ?? LocalizationService.Current;
         _conversionPlanner = conversionPlanner;
         _conversionProcessor = conversionProcessor
             ?? new ConversionProcessor(new DefaultConversionAdapterResolver());
@@ -602,7 +604,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
             foreach (var error in scanResult.Errors)
             {
-                AddError(_localization.Format("ScanReadErrorFormat", Path.GetFileName(error.Path)));
+                AddLocalizedError("ScanReadErrorFormat", Path.GetFileName(error.Path));
             }
 
             foreach (var group in scanResult.Files
@@ -616,8 +618,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     _ruleSet.GetRule(group.Key).Target,
                     ChangeRule,
                     group.Key == SourceFormat.Unknown
-                        ? ExtensionBreakdownFormatter.Format(group)
-                        : string.Empty));
+                        ? group.ToArray()
+                        : [],
+                    _localization));
             }
 
             RebuildPreview();
@@ -697,16 +700,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         _conversionCancellation.Token);
                     if (!zipResult.Created)
                     {
-                        AddError(zipResult.ErrorCode == "no_successful_outputs"
-                            ? L("ZipNoOutputs")
-                            : L("ZipCreateFailed"));
+                        AddLocalizedError(zipResult.ErrorCode == "no_successful_outputs"
+                            ? "ZipNoOutputs"
+                            : "ZipCreateFailed");
                     }
                 }
                 catch (Exception exception) when (exception is IOException
                                                    or InvalidDataException
                                                    or UnauthorizedAccessException)
                 {
-                    AddError(L("ZipCreateFailed"));
+                    AddLocalizedError("ZipCreateFailed");
                 }
             }
             var resultsBySource = summary.Results.ToDictionary(
@@ -806,13 +809,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                             partialSummary,
                             CancellationToken.None);
                         if (!zipResult.Created)
-                            AddError(L("ZipPartialFailed"));
+                            AddLocalizedError("ZipPartialFailed");
                     }
                     catch (Exception exception) when (exception is IOException
                                                        or InvalidDataException
                                                        or UnauthorizedAccessException)
                     {
-                        AddError(L("ZipPartialFailed"));
+                        AddLocalizedError("ZipPartialFailed");
                     }
                 }
 
@@ -901,10 +904,28 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public void AddError(string message)
     {
-        if (ErrorMessages.Contains(message, StringComparer.Ordinal))
-            return;
+        AddErrorEntry(new LocalizedErrorEntry($"raw:{message}", () => message));
+    }
 
-        ErrorMessages.Add(message);
+    public void AddLocalizedError(string resourceKey, params object[] arguments)
+    {
+        var identity = $"resource:{resourceKey}:{string.Join("|", arguments.Select(value => value?.ToString()))}";
+        AddErrorEntry(new LocalizedErrorEntry(
+            identity,
+            () => _localization.Format(resourceKey, arguments)));
+    }
+
+    public void AddConversionError(ConversionResult result)
+    {
+        var identity = $"operation:{result.Operation.SourcePath}:{result.Diagnostic?.ErrorCode}:{result.Diagnostic?.HResult}";
+        AddErrorEntry(new LocalizedErrorEntry(identity, () => FormatConversionError(result)));
+    }
+
+    private void AddErrorEntry(LocalizedErrorEntry entry)
+    {
+        if (_errorEntries.Any(existing => existing.Identity == entry.Identity)) return;
+        _errorEntries.Add(entry);
+        ErrorMessages.Add(entry.Render());
         OnPropertyChanged(nameof(HasErrors));
     }
 
@@ -989,7 +1010,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     isSelected: operation.Status == OperationStatus.Ready
                         && (!previousSelection.TryGetValue(operation.SourcePath, out var selected)
                             || selected),
-                    selectionChanged: SelectionChanged));
+                    selectionChanged: SelectionChanged,
+                    localization: _localization));
             }
         }
 
@@ -1104,6 +1126,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         FormatRules.Clear();
         Operations.Clear();
         ErrorMessages.Clear();
+        _errorEntries.Clear();
         FoundCount = 0;
         ReadyCount = 0;
         SelectedReadyCount = 0;
@@ -1199,12 +1222,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             : $"{duration.Minutes:00}:{duration.Seconds:00}";
     }
 
-    private static string FormatConversionError(ConversionResult result)
+    private string FormatConversionError(ConversionResult result)
     {
         var details = new List<string>();
         if (!string.IsNullOrWhiteSpace(result.Diagnostic?.ErrorCode))
         {
-            details.Add(LocalizationService.Current.Format("ErrorCodeFormat", result.Diagnostic.ErrorCode));
+            details.Add(_localization.Format("ErrorCodeFormat", result.Diagnostic.ErrorCode));
         }
         if (result.Diagnostic?.HResult is int hResult)
         {
@@ -1214,7 +1237,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var diagnostic = details.Count == 0
             ? string.Empty
             : $" ({string.Join(", ", details)})";
-        return $"{result.Operation.RelativePath}: {result.Message}{diagnostic}";
+        var message = OperationMessageLocalizer.Localize(
+            result.Status,
+            result.Operation.Target,
+            result.Message,
+            result.Diagnostic?.ErrorCode,
+            _localization);
+        return $"{result.Operation.RelativePath}: {message}{diagnostic}";
     }
 
     private void AddFailureErrorsFromRows()
@@ -1225,7 +1254,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                      .OfType<ConversionResult>()
                      .Where(result => result.Status == OperationStatus.Failed))
         {
-            AddError(FormatConversionError(result));
+            AddConversionError(result);
         }
     }
 
@@ -1442,6 +1471,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             CopyListStatus = _localization.Format("CopiedFilesFormat", copiedCount, _localization.FileWord(copiedCount));
         else if (_copyListWasEmpty)
             CopyListStatus = L("NoSelectedFiles");
+        RelocalizeErrors();
         FinalReportTitle = L(_finalWasStopped ? "StoppedByUser" : "FinalComplete");
         if (_completedElapsed.HasValue) FreezeLocalizedTiming();
         else if (IsConverting) RefreshConversionTiming();
@@ -1482,6 +1512,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     private string L(string key) => _localization.Get(key);
+
+    private void RelocalizeErrors()
+    {
+        ErrorMessages.Clear();
+        foreach (var entry in _errorEntries) ErrorMessages.Add(entry.Render());
+        OnPropertyChanged(nameof(HasErrors));
+    }
 
     public void SetLocalizedState(string key, params object[] arguments) => SetState(key, arguments);
 
@@ -1530,4 +1567,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         public void Report(T value) => report(value);
     }
+
+    private sealed record LocalizedErrorEntry(string Identity, Func<string> Render);
 }

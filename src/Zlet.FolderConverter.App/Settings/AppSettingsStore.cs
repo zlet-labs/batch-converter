@@ -5,6 +5,11 @@ using Zlet.FolderConverter.App.Localization;
 
 namespace Zlet.FolderConverter.App.Settings;
 
+public sealed record SettingsSaveResult(bool Success, string? ErrorCode = null)
+{
+    public static SettingsSaveResult Saved { get; } = new(true);
+}
+
 public sealed class AppSettingsStore
 {
     public AppSettingsStore(string? path = null) => SettingsPath = path ?? DefaultPath;
@@ -30,31 +35,72 @@ public sealed class AppSettingsStore
         catch (InvalidOperationException) { return null; }
     }
 
-    public void SaveLanguage(string language)
+    public SettingsSaveResult TrySaveLanguage(string language)
     {
-        if (!AppLanguage.IsSupported(language)) throw new ArgumentOutOfRangeException(nameof(language));
+        if (!AppLanguage.IsSupported(language)) return new(false, "invalid_language");
         JsonObject root;
         try
         {
             root = File.Exists(SettingsPath)
                 ? JsonNode.Parse(File.ReadAllText(SettingsPath)) as JsonObject ?? new JsonObject()
                 : new JsonObject();
+            root["language"] = AppLanguage.Normalize(language);
+            var directory = Path.GetDirectoryName(SettingsPath);
+            if (string.IsNullOrWhiteSpace(directory)) return new(false, "invalid_settings_path");
+            Directory.CreateDirectory(directory);
+            var temporaryPath = Path.Combine(directory, $"settings.{Guid.NewGuid():N}.tmp");
+            try
+            {
+                File.WriteAllText(temporaryPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                File.Move(temporaryPath, SettingsPath, true);
+                return SettingsSaveResult.Saved;
+            }
+            finally
+            {
+                try { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+            }
         }
-        catch (JsonException) { root = new JsonObject(); }
-        catch (InvalidOperationException) { root = new JsonObject(); }
+        catch (JsonException)
+        {
+            return TryReplaceCorruptedSettings(language);
+        }
+        catch (Exception exception) when (exception is IOException
+                                           or UnauthorizedAccessException
+                                           or ArgumentException
+                                           or NotSupportedException)
+        {
+            return new(false, "settings_write_failed");
+        }
+    }
 
-        root["language"] = AppLanguage.Normalize(language);
-        var directory = Path.GetDirectoryName(SettingsPath)!;
-        Directory.CreateDirectory(directory);
-        var temporaryPath = Path.Combine(directory, $"settings.{Guid.NewGuid():N}.tmp");
+    private SettingsSaveResult TryReplaceCorruptedSettings(string language)
+    {
         try
         {
-            File.WriteAllText(temporaryPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-            File.Move(temporaryPath, SettingsPath, true);
+            var directory = Path.GetDirectoryName(SettingsPath);
+            if (string.IsNullOrWhiteSpace(directory)) return new(false, "invalid_settings_path");
+            Directory.CreateDirectory(directory);
+            var temporaryPath = Path.Combine(directory, $"settings.{Guid.NewGuid():N}.tmp");
+            try
+            {
+                var root = new JsonObject { ["language"] = AppLanguage.Normalize(language) };
+                File.WriteAllText(temporaryPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                File.Move(temporaryPath, SettingsPath, true);
+                return SettingsSaveResult.Saved;
+            }
+            finally
+            {
+                try { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+            }
         }
-        finally
+        catch (Exception exception) when (exception is IOException
+                                           or UnauthorizedAccessException
+                                           or ArgumentException
+                                           or NotSupportedException)
         {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+            return new(false, "settings_write_failed");
         }
     }
 }

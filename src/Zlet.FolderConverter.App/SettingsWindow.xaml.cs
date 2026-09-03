@@ -19,6 +19,7 @@ public partial class SettingsWindow : Window
     {
         if (!_initialized || sender is not System.Windows.Controls.RadioButton { Tag: string language }) return;
         LocalizationService.Current.Apply(language);
-        new AppSettingsStore().SaveLanguage(language);
+        var result = new AppSettingsStore().TrySaveLanguage(language);
+        SaveErrorText.Visibility = result.Success ? Visibility.Collapsed : Visibility.Visible;
     }
 }

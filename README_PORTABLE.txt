@@ -1,11 +1,11 @@
-Zlet Batch Converter v0.0.2
-================================
+Zlet Converter v0.0.2
+=====================
 
-Архив: ZletBatchConverter-v0.0.2-win-x64.zip
+Архив: ZletConverter-v0.0.2-win-x64.zip
 
 1. Полностью распакуйте ZIP в обычную локальную папку.
-2. Запустите ZletBatchConverter.exe.
-3. Не отделяйте ZletBatchConverter.exe от остальных файлов распакованной папки.
+2. Запустите ZletConverter.exe.
+3. Не отделяйте ZletConverter.exe от остальных файлов распакованной папки.
 
 Приложение работает локально и не отправляет документы в интернет.
 .NET 8 входит в self-contained пакет.

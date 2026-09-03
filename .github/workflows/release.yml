@@ -40,24 +40,32 @@ jobs:
         shell: pwsh
         run: |
           $appProject = "src\Zlet.FolderConverter.App\Zlet.FolderConverter.App.csproj"
-          $version = (& dotnet msbuild $appProject -nologo -getProperty:ZletProductVersion |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-            Select-Object -Last 1).Trim()
-
-          if ([string]::IsNullOrWhiteSpace($version)) {
-            throw "ZletProductVersion is empty."
+          function Get-ProjectProperty([string]$Name) {
+            $value = (& dotnet msbuild $appProject -nologo "-getProperty:$Name" |
+              Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+              Select-Object -Last 1).Trim()
+            if ([string]::IsNullOrWhiteSpace($value)) {
+              throw "$Name is empty."
+            }
+            return $value
           }
+
+          $version = Get-ProjectProperty "ZletProductVersion"
+          $productName = Get-ProjectProperty "ZletProductName"
+          $executableName = Get-ProjectProperty "ZletExecutableName"
+          $portablePackageName = Get-ProjectProperty "ZletPortablePackageName"
 
           $tag = "v$version"
           $notes = "docs\RELEASE_NOTES_v$version.md"
-          $installer = "ZletBatchConverter-v$version-Setup-win-x64.exe"
-          $portable = "ZletBatchConverter-v$version-win-x64.zip"
+          $installer = "$executableName-v$version-Setup-win-x64.exe"
+          $portable = "$portablePackageName.zip"
 
           if (-not (Test-Path -LiteralPath $notes -PathType Leaf)) {
             throw "Release notes file is missing: $notes"
           }
 
           "version=$version" >> $env:GITHUB_OUTPUT
+          "product_name=$productName" >> $env:GITHUB_OUTPUT
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "notes=$notes" >> $env:GITHUB_OUTPUT
           "installer=$installer" >> $env:GITHUB_OUTPUT
@@ -180,7 +188,7 @@ jobs:
         shell: pwsh
         run: |
           $tag = "${{ steps.meta.outputs.tag }}"
-          $title = "Zlet Batch Converter $tag"
+          $title = "${{ steps.meta.outputs.product_name }} $tag"
 
           gh release create $tag `
             "${{ steps.package.outputs.installer_path }}" `

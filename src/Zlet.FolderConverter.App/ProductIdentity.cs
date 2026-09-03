@@ -8,7 +8,10 @@ public static class ProductIdentity
 
     public static string Name =>
         Assembly.GetCustomAttribute<AssemblyProductAttribute>()?.Product
-        ?? "Zlet Batch Converter";
+        ?? "Zlet Converter";
+
+    public static string ExecutableName =>
+        Assembly.GetName().Name ?? "ZletConverter";
 
     public static string Version =>
         (Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
@@ -16,5 +19,5 @@ public static class ProductIdentity
         .Split('+')[0];
 
     public static string ResultZipFileName =>
-        $"ZletBatchConverter-v{Version}-results.zip";
+        $"{ExecutableName}-v{Version}-results.zip";
 }

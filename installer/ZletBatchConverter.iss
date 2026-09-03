@@ -20,10 +20,10 @@
   #error IconPath must be supplied by build-installer.ps1
 #endif
 
-#define AppName "Zlet Batch Converter"
+#define AppName "Zlet Converter"
 #define AppPublisher "Zlet Labs"
-#define AppUrl "https://github.com/zlet-labs/folder-converter"
-#define SetupBaseName "ZletBatchConverter-v" + AppVersion + "-Setup-" + RuntimeIdentifier
+#define AppUrl "https://github.com/zlet-labs/batch-converter"
+#define SetupBaseName "ZletConverter-v" + AppVersion + "-Setup-" + RuntimeIdentifier
 
 [Setup]
 AppId={{B124EC99-C473-496E-B293-3FCA72E7CACD}
@@ -39,8 +39,8 @@ VersionInfoCompany={#AppPublisher}
 VersionInfoDescription={#AppName} Setup
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#AppVersion}
-DefaultDirName={localappdata}\Programs\Zlet Batch Converter
-DefaultGroupName=Zlet Batch Converter
+DefaultDirName={localappdata}\Programs\Zlet Converter
+DefaultGroupName=Zlet Converter
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -65,12 +65,22 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[InstallDelete]
+; ZL-057: remove only exact app-owned files/shortcuts from the previous public name.
+Type: files; Name: "{app}\ZletBatchConverter.exe"
+Type: files; Name: "{app}\ZletBatchConverter.dll"
+Type: files; Name: "{app}\ZletBatchConverter.deps.json"
+Type: files; Name: "{app}\ZletBatchConverter.runtimeconfig.json"
+Type: files; Name: "{app}\ZletBatchConverter.pdb"
+Type: files; Name: "{autoprograms}\Zlet Batch Converter.lnk"
+Type: files; Name: "{autodesktop}\Zlet Batch Converter.lnk"
+
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Zlet Batch Converter"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
-Name: "{autodesktop}\Zlet Batch Converter"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\Zlet Converter"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
+Name: "{autodesktop}\Zlet Converter"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,Zlet Batch Converter}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,Zlet Converter}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent

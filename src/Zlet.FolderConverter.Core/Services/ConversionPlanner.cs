@@ -2,8 +2,23 @@ using Zlet.FolderConverter.Core.Models;
 
 namespace Zlet.FolderConverter.Core.Services;
 
-public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver) : IConversionPlanner
+public sealed class ConversionPlanner : IConversionPlanner
 {
+    private readonly IConversionAdapterResolver _adapterResolver;
+    private readonly IExcelWorkbookInspector _excelInspector;
+    private readonly Dictionary<string, ExcelWorkbookInspectionResult> _worksheetCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    public ConversionPlanner(
+        IConversionAdapterResolver adapterResolver,
+        IExcelWorkbookInspector? excelInspector = null)
+    {
+        _adapterResolver = adapterResolver;
+        _excelInspector = excelInspector ?? new MicrosoftExcelWorkbookInspector(
+            new MicrosoftOfficeCapabilityDetector(),
+            new MicrosoftOfficeWorkerProcessRunner());
+    }
+
     public IReadOnlyList<PlannedOperation> CreatePlan(
         ScanResult scanResult,
         string rootPath,
@@ -54,6 +69,7 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
         string targetRootPath,
         ConversionRule rule)
     {
+        file = EnsureWorksheetMetadata(file);
         var targetExtension = rule.Target.ToExtension();
         if (!string.IsNullOrWhiteSpace(file.WorksheetInspectionErrorCode))
         {
@@ -110,7 +126,7 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
             file.Worksheets.Select(sheet => sheet.Name),
             targetExtension);
         var relativeDirectory = Path.GetDirectoryName(file.RelativePath) ?? string.Empty;
-        var adapter = adapterResolver.Resolve(file.Format, rule.Target);
+        var adapter = _adapterResolver.Resolve(file.Format, rule.Target);
         var adapterAvailable = adapter?.IsAvailable == true;
         var result = new List<PlannedOperation>(file.Worksheets.Count);
 
@@ -245,6 +261,41 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
         return result;
     }
 
+    private ScannedFile EnsureWorksheetMetadata(ScannedFile file)
+    {
+        if (file.Worksheets is not null
+            || !string.IsNullOrWhiteSpace(file.WorksheetInspectionErrorCode)
+            || !_excelInspector.IsAvailable)
+        {
+            return file;
+        }
+
+        if (!_worksheetCache.TryGetValue(file.SourcePath, out var inspection))
+        {
+            try
+            {
+                inspection = _excelInspector
+                    .InspectAsync(file.SourcePath, CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (Exception exception) when (exception is IOException
+                                               or UnauthorizedAccessException
+                                               or InvalidOperationException)
+            {
+                inspection = new ExcelWorkbookInspectionResult(
+                    false,
+                    [],
+                    "worksheet_inspection_failure");
+            }
+            _worksheetCache[file.SourcePath] = inspection;
+        }
+
+        return inspection.Success
+            ? file with { Worksheets = inspection.Worksheets }
+            : file with { WorksheetInspectionErrorCode = inspection.ErrorCode };
+    }
+
     private PlannedOperation CreateOperation(
         ScannedFile file,
         string sourceRootPath,
@@ -302,7 +353,7 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
                 sourceRootPath);
         }
 
-        var adapter = adapterResolver.Resolve(file.Format, rule.Target);
+        var adapter = _adapterResolver.Resolve(file.Format, rule.Target);
         var adapterAvailable = adapter?.IsAvailable == true;
 
         if (File.Exists(targetPath) || Directory.Exists(targetPath))

@@ -26,10 +26,10 @@ Zlet Converter is a small local Windows utility for batch-processing files in fo
 
 | Windows installer | Portable ZIP |
 |---|---|
-| **[⬇ Download installer](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/ZletBatchConverter-v0.0.2-Setup-win-x64.exe)** | **[📦 Download portable](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/ZletBatchConverter-v0.0.2-win-x64.zip)** |
+| **[⬇ Download installer](https://github.com/zlet-labs/zlet-converter/releases/download/v0.0.2/ZletBatchConverter-v0.0.2-Setup-win-x64.exe)** | **[📦 Download portable](https://github.com/zlet-labs/zlet-converter/releases/download/v0.0.2/ZletBatchConverter-v0.0.2-win-x64.zip)** |
 | `ZletBatchConverter-v0.0.2-Setup-win-x64.exe` | `ZletBatchConverter-v0.0.2-win-x64.zip` |
 
-[Release notes](https://github.com/zlet-labs/batch-converter/releases/tag/v0.0.2) · [SHA-256 checksums](https://github.com/zlet-labs/batch-converter/releases/download/v0.0.2/SHA256SUMS.txt)
+[Release notes](https://github.com/zlet-labs/zlet-converter/releases/tag/v0.0.2) · [SHA-256 checksums](https://github.com/zlet-labs/zlet-converter/releases/download/v0.0.2/SHA256SUMS.txt)
 
 ### Why use it?
 
@@ -130,6 +130,12 @@ dotnet build FolderConverter.sln -c Release
 dotnet test FolderConverter.sln -c Release
 ```
 
+If you cloned the repository before it was renamed to `zlet-converter`, update the existing remote instead of recloning:
+
+```powershell
+git remote set-url origin https://github.com/zlet-labs/zlet-converter.git
+```
+
 Build the portable package:
 
 ```powershell
@@ -174,6 +180,6 @@ If an Office application or required fixture is missing, the corresponding integ
 
 Zlet Converter is a **Zlet Labs** project: small, practical, self-serve tools without unnecessary SaaS machinery.
 
-[Zlet Labs](https://zlet.app/) · [GitHub Issues](https://github.com/zlet-labs/batch-converter/issues) · [All releases](https://github.com/zlet-labs/batch-converter/releases) · [MIT License](LICENSE)
+[Zlet Labs](https://zlet.app/) · [GitHub Issues](https://github.com/zlet-labs/zlet-converter/issues) · [All releases](https://github.com/zlet-labs/zlet-converter/releases) · [MIT License](LICENSE)
 
 Manual release verification checklist: [docs/manual-clean-machine-verification.md](docs/manual-clean-machine-verification.md)

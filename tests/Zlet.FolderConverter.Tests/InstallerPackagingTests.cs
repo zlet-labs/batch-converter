@@ -16,6 +16,7 @@ public sealed class InstallerPackagingTests
         var buildScript = File.ReadAllText(buildScriptPath);
 
         Assert.Contains("#define AppName \"Zlet Converter\"", definition);
+        Assert.Contains("#define AppUrl \"https://github.com/zlet-labs/zlet-converter\"", definition);
         Assert.Contains("AppId={{B124EC99-C473-496E-B293-3FCA72E7CACD}", definition);
         Assert.Contains("ArchitecturesAllowed=x64compatible", definition);
         Assert.Contains("ArchitecturesInstallIn64BitMode=x64compatible", definition);

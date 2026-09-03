@@ -36,6 +36,19 @@ Zlet Batch Converter is a small local Windows utility for batch-processing files
 | No accounts, no cloud uploads | Scan folders and subfolders in one run | Existing outputs are not silently overwritten |
 | Document contents stay on your PC | Select only the operations you want | Office processes are never killed by name alone |
 
+## Gemini Notebook and modern document workflows
+
+Preparing older document collections for **Gemini Notebook** is one practical use case for Zlet Batch Converter. Google currently lists DOCX, PPTX, TXT and Markdown among supported Gemini Notebook source types, so the converter can help prepare:
+
+- `.doc` → `.docx`
+- `.ppt` → `.pptx`
+- `.json` → `.txt` or `.md`
+- already-modern `.docx` and `.pptx` files as unchanged safe copies
+
+Gemini Notebook source support: [Google Help](https://support.google.com/gemininotebook/answer/16215270?co=GENIE.Platform%3DDesktop&hl=en)
+
+**There is no Gemini Notebook integration or automatic upload.** Zlet Batch Converter processes files locally; you decide if and when to upload the resulting files to Gemini Notebook or another service.
+
 ## Supported formats
 
 | Source | Result | Requirement |

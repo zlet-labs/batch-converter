@@ -6,12 +6,42 @@ PowerPoint versions, ZIP size, unpacked size, commit SHA, and tester name.
 ## Package integrity
 
 - Fully extract the ZIP to a new local folder.
-- Confirm `ZletBatchConverter.exe` and
+- Confirm `ZletConverter.exe` and
   `Zlet.FolderConverter.OfficeWorker.exe` are present.
 - Confirm there are no source, test, local config, Python, Java, or Office
   runtime files.
-- Start `ZletBatchConverter.exe` from the fully extracted folder.
-- Confirm the title is `Zlet Batch Converter v0.0.2`.
+- Start `ZletConverter.exe` from the fully extracted folder.
+- Confirm the title is `Zlet Converter v0.0.2`.
+- Confirm the portable package name follows
+  `ZletConverter-v<version>-win-x64.zip`.
+
+## Installer clean install
+
+- Build the installer with `scripts/build-installer.ps1`.
+- Confirm the output name follows
+  `ZletConverter-v<version>-Setup-win-x64.exe`.
+- Install for the current user on a machine without an existing installation.
+- Confirm the installer, Installed Apps entry, Start-menu shortcut, optional
+  desktop shortcut, and post-install launch text use `Zlet Converter`.
+- Confirm a clean install uses the visible install folder name `Zlet Converter`.
+- Confirm uninstall succeeds and removes app-owned installed files/shortcuts.
+
+## Installer upgrade from the previous public name
+
+When an old-name installer fixture is available, use the published v0.0.2
+installer as the upgrade baseline.
+
+- Install the historical `Zlet Batch Converter` build first.
+- Run the new `Zlet Converter` installer without manually uninstalling the old
+  build.
+- Confirm the existing Inno Setup AppId is treated as the same product and only
+  one Installed Apps entry remains, named `Zlet Converter`.
+- Confirm there are no duplicate app-owned Start-menu or desktop shortcuts.
+- Confirm the old app-owned `ZletBatchConverter.exe` host files are not left as
+  a second launchable application in the install directory.
+- Confirm `ZletConverter.exe` launches normally after the upgrade.
+- Confirm uninstall still succeeds after the upgrade.
+- Do not delete or rename unrelated/user-created files while checking cleanup.
 
 ## Office capability display
 

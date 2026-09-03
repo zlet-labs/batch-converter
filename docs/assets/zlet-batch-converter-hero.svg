@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
-  <title id="title">Zlet Batch Converter</title>
-  <desc id="desc">Product banner for Zlet Batch Converter, a local Windows batch file converter from Zlet Labs.</desc>
+  <title id="title">Zlet Converter</title>
+  <desc id="desc">Product banner for Zlet Converter, a local Windows file converter from Zlet Labs.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0b1020"/>
@@ -26,8 +26,8 @@
   </g>
 
   <g fill="#f8fafc" font-family="Segoe UI, Arial, sans-serif">
-    <text x="70" y="190" font-size="52" font-weight="700">Zlet Batch Converter</text>
-    <text x="70" y="232" font-size="24" fill="#cbd5e1">Local Windows batch file conversion</text>
+    <text x="70" y="190" font-size="52" font-weight="700">Zlet Converter</text>
+    <text x="70" y="232" font-size="24" fill="#cbd5e1">Local Windows file conversion</text>
     <text x="70" y="275" font-size="18" fill="#94a3b8">DOC → DOCX   ·   XLS → XLSX   ·   PPT → PPTX</text>
     <text x="70" y="309" font-size="16" fill="#6ee7ff">Local only  •  No cloud uploads  •  Safe no-overwrite workflow</text>
     <text x="70" y="335" font-size="14" fill="#64748b">Zlet Labs</text>

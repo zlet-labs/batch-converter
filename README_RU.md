@@ -1,7 +1,7 @@
-# Zlet Batch Converter
+# Zlet Converter
 
 <p align="center">
-  <img src="docs/assets/zlet-batch-converter-hero.svg" alt="Zlet Batch Converter — локальный пакетный конвертер файлов для Windows от Zlet Labs" width="100%">
+  <img src="docs/assets/zlet-batch-converter-hero.svg" alt="Zlet Converter — локальный конвертер файлов для Windows от Zlet Labs" width="100%">
 </p>
 
 <p align="center">
@@ -16,9 +16,11 @@
   <img alt="MIT License" src="https://img.shields.io/badge/license-MIT-22c55e">
 </p>
 
-Zlet Batch Converter — небольшая локальная утилита для Windows, которая пакетно обрабатывает файлы в папках и подпапках. Она преобразует поддерживаемые старые форматы Microsoft Office, безопасно копирует современные Office-файлы, сохраняет относительную структуру папок и выполняет обработку на вашем компьютере.
+Zlet Converter — небольшая локальная утилита для Windows, которая пакетно обрабатывает файлы в папках и подпапках. Она преобразует поддерживаемые старые форматы Microsoft Office, безопасно копирует современные Office-файлы, сохраняет относительную структуру папок и выполняет обработку на вашем компьютере.
 
 > **v0.0.2 — PRE-ALPHA.** Установщик пока не подписан Authenticode, поэтому Windows может показать Unknown publisher или предупреждение SmartScreen. Microsoft Office в комплект не входит.
+
+> **О переименовании:** текущий публичный релиз v0.0.2 был опубликован под прежним публичным названием `Zlet Batch Converter`. Его release title, executable, installer, portable ZIP и имена опубликованных assets остаются историческими и не переименовываются. Сборки после ZL-057 используют `Zlet Converter` / `ZletConverter`.
 
 ## Скачать v0.0.2
 
@@ -38,7 +40,7 @@ Zlet Batch Converter — небольшая локальная утилита д
 
 ## Для Gemini Notebook и современных document/AI workflows
 
-Подготовка старых коллекций документов для **Gemini Notebook** — один из практичных сценариев Zlet Batch Converter. По текущей справке Google Gemini Notebook поддерживает DOCX, PPTX, TXT и Markdown как типы источников, поэтому конвертер может помочь подготовить:
+Подготовка старых коллекций документов для **Gemini Notebook** — один из практичных сценариев Zlet Converter. По текущей справке Google Gemini Notebook поддерживает DOCX, PPTX, TXT и Markdown как типы источников, поэтому конвертер может помочь подготовить:
 
 - `.doc` → `.docx`
 - `.ppt` → `.pptx`
@@ -47,7 +49,7 @@ Zlet Batch Converter — небольшая локальная утилита д
 
 Поддерживаемые источники Gemini Notebook: [справка Google](https://support.google.com/gemininotebook/answer/16215270?co=GENIE.Platform%3DDesktop&hl=ru)
 
-**Прямой интеграции с Gemini Notebook и автоматической загрузки нет.** Zlet Batch Converter обрабатывает файлы локально; вы сами решаете, загружать ли результат в Gemini Notebook или другой сервис и когда это делать.
+**Прямой интеграции с Gemini Notebook и автоматической загрузки нет.** Zlet Converter обрабатывает файлы локально; вы сами решаете, загружать ли результат в Gemini Notebook или другой сервис и когда это делать.
 
 ## Поддерживаемые форматы
 
@@ -66,7 +68,7 @@ Word, Excel и PowerPoint определяются независимо. Есл�
 ## Быстрый старт
 
 1. Скачайте установщик или portable ZIP выше.
-2. Запустите `ZletBatchConverter.exe`.
+2. Для текущего публичного пакета v0.0.2 запустите `ZletBatchConverter.exe`. Сборки после ZL-057 используют `ZletConverter.exe`.
 3. Выберите исходную папку и выполните сканирование.
 4. Проверьте Preview и отметьте нужные операции.
 5. Выберите место/режим сохранения результата и запустите обработку.
@@ -87,7 +89,7 @@ Word, Excel и PowerPoint определяются независимо. Есл�
 
 ## Ограничения
 
-Zlet Batch Converter всё ещё находится в статусе **PRE-ALPHA**. Сложные, повреждённые, защищённые паролем или использующие неподдерживаемые возможности legacy-документы могут не преобразоваться. Точность результата зависит от установленной версии Microsoft Office и особенностей конкретного документа.
+Zlet Converter всё ещё находится в статусе **PRE-ALPHA**. Сложные, повреждённые, защищённые паролем или использующие неподдерживаемые возможности legacy-документы могут не преобразоваться. Точность результата зависит от установленной версии Microsoft Office и особенностей конкретного документа.
 
 Исходные файлы не должны намеренно изменяться, но для важных данных при тестировании pre-release ПО рекомендуется иметь резервную копию.
 
@@ -134,10 +136,10 @@ dotnet test FolderConverter.sln -c Release
 .\scripts\publish-portable.ps1
 ```
 
-Ожидаемый ZIP для v0.0.2:
+Ожидаемый локальный ZIP для текущей версии исходников:
 
 ```text
-artifacts/portable/win-x64/ZletBatchConverter-v0.0.2-win-x64.zip
+artifacts/portable/win-x64/ZletConverter-v0.0.2-win-x64.zip
 ```
 
 Сборка Windows installer через Inno Setup 6:
@@ -170,7 +172,7 @@ dotnet test FolderConverter.sln -c Release --filter Category=OfficeIntegration
 
 ## Проект
 
-Zlet Batch Converter — проект **Zlet Labs**: небольшие практичные self-serve инструменты без лишней SaaS-инфраструктуры.
+Zlet Converter — проект **Zlet Labs**: небольшие практичные self-serve инструменты без лишней SaaS-инфраструктуры.
 
 [Zlet Labs](https://zlet.app/) · [GitHub Issues](https://github.com/zlet-labs/batch-converter/issues) · [Все релизы](https://github.com/zlet-labs/batch-converter/releases) · [MIT License](LICENSE)
 

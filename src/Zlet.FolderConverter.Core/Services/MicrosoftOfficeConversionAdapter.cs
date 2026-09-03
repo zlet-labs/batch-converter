@@ -73,7 +73,9 @@ public sealed class MicrosoftOfficeConversionAdapter : IConversionAdapter
                     new OfficeWorkerRequest(
                         _application,
                         operation.SourcePath,
-                        temporaryOutput),
+                        temporaryOutput,
+                        operation.Target,
+                        operation.WorksheetName),
                     token);
                 return workerResult.Success
                     ? new TemporaryOutputProductionResult(true)
@@ -107,6 +109,8 @@ public sealed class MicrosoftOfficeConversionAdapter : IConversionAdapter
             "office_com_failure" =>
                 $"{_application.ToDisplayName()} вернул ошибку при открытии или сохранении файла"
                 + FormatHResult(result.HResult) + ".",
+            "worksheet_not_found" => "Лист Excel не найден в исходной книге.",
+            "excel_sheet_operation_failure" => "Не удалось экспортировать выбранный лист Excel.",
             _ when result.TimedOut =>
                 "Преобразование превысило допустимое время.",
             _ => "Не удалось преобразовать файл в Microsoft Office."

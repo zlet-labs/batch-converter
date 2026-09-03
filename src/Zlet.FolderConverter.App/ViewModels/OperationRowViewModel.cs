@@ -131,7 +131,7 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
             : nextPercent;
         _isSelected = false;
         _isNotSelected = false;
-        Operation = Operation with { Status = OperationStatus.Converting, Message = _localization.Get("OperationExecuting") };
+        Operation = Operation with { Status = OperationStatus.Converting, Message = string.Empty };
         NotifyExecutionChanged();
     }
 
@@ -150,11 +150,11 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
     {
         FreezeExecutionTime(timeProvider, timestamp);
         _operationPercent = null;
+        Operation = Operation with { Status = OperationStatus.Cancelled, Message = string.Empty };
         Result = new ConversionResult(
             Operation,
             OperationStatus.Cancelled,
-            _localization.Get("OperationCancelled"));
-        Operation = Operation with { Status = OperationStatus.Cancelled, Message = _localization.Get("OperationCancelled") };
+            string.Empty);
         _isSelected = true;
         NotifyExecutionChanged();
     }
@@ -166,7 +166,7 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         _executionElapsed = null;
         _liveExecutionElapsed = null;
         Result = null;
-        Operation = Operation with { Status = OperationStatus.NotProcessed, Message = _localization.Get("OperationNotProcessed") };
+        Operation = Operation with { Status = OperationStatus.NotProcessed, Message = string.Empty };
         _isSelected = true;
         NotifyExecutionChanged();
     }

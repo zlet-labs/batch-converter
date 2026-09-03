@@ -97,20 +97,40 @@ public sealed class LocalizationTests : IDisposable
         Assert.Equal("en-US", json["language"]!.GetValue<string>());
     }
 
+    [Fact]
+    public void Unknown_language_in_valid_settings_can_be_replaced_without_losing_other_values()
+    {
+        var store = Store();
+        Directory.CreateDirectory(Path.GetDirectoryName(store.SettingsPath)!);
+        File.WriteAllText(store.SettingsPath, "{\"futureSetting\":42,\"language\":\"xx-YY\"}");
+        Assert.Null(store.LoadLanguage());
+        Assert.True(StartupLanguageResolver.Resolve(null, store.LoadLanguage()).ChooserRequired);
+
+        Assert.True(store.TrySaveLanguage(AppLanguage.English).Success);
+
+        var json = JsonNode.Parse(File.ReadAllText(store.SettingsPath))!.AsObject();
+        Assert.Equal(42, json["futureSetting"]!.GetValue<int>());
+        Assert.Equal(AppLanguage.English, json["language"]!.GetValue<string>());
+    }
+
     [Theory]
     [InlineData(1, "файл")][InlineData(2, "файла")][InlineData(5, "файлов")][InlineData(11, "файлов")][InlineData(21, "файл")][InlineData(22, "файла")][InlineData(25, "файлов")]
-    public void Russian_pluralization(int count, string expected) => Assert.Equal(expected, LocalizationFormatting.FileWord(count, AppLanguage.Russian));
+    public void Russian_pluralization(int count, string expected) =>
+        Assert.Equal(expected, LocalizationService.CreateStandalone(AppLanguage.Russian).FileWord(count));
 
     [Theory][InlineData(1, "file")][InlineData(2, "files")]
-    public void English_pluralization(int count, string expected) => Assert.Equal(expected, LocalizationFormatting.FileWord(count, AppLanguage.English));
+    public void English_pluralization(int count, string expected) =>
+        Assert.Equal(expected, LocalizationService.CreateStandalone(AppLanguage.English).FileWord(count));
 
     [Fact]
     public void Sizes_and_times_follow_selected_language()
     {
-        Assert.Equal("0,84 МБ", LocalizationFormatting.FormatFileSize(880804, AppLanguage.Russian));
-        Assert.Equal("0.84 MB", LocalizationFormatting.FormatFileSize(880804, AppLanguage.English));
-        Assert.Equal("3,2 с", LocalizationFormatting.FormatExecutionTime(TimeSpan.FromSeconds(3.2), AppLanguage.Russian));
-        Assert.Equal("3.2 s", LocalizationFormatting.FormatExecutionTime(TimeSpan.FromSeconds(3.2), AppLanguage.English));
+        var ru = LocalizationService.CreateStandalone(AppLanguage.Russian);
+        var en = LocalizationService.CreateStandalone(AppLanguage.English);
+        Assert.Equal("0,84 МБ", ru.FormatFileSize(880804));
+        Assert.Equal("0.84 MB", en.FormatFileSize(880804));
+        Assert.Equal("3,2 с", ru.FormatExecutionTime(TimeSpan.FromSeconds(3.2)));
+        Assert.Equal("3.2 s", en.FormatExecutionTime(TimeSpan.FromSeconds(3.2)));
     }
 
     [Fact]
@@ -183,6 +203,65 @@ public sealed class LocalizationTests : IDisposable
         row.RefreshLocalization();
         Assert.Equal("Недопустимый путь результата.", row.Message);
         Assert.Equal("Ошибка: Недопустимый путь результата.", row.Status);
+    }
+
+    [Fact]
+    public void Runtime_converting_message_relocalizes_from_semantic_status()
+    {
+        var localization = LocalizationService.CreateStandalone(AppLanguage.Russian);
+        var row = RuntimeRow(localization);
+
+        row.BeginExecution(0, 10);
+        Assert.Equal(OperationStatus.Converting, row.Operation.Status);
+        Assert.Equal(string.Empty, row.Operation.Message);
+        Assert.Equal("Выполняется операция.", row.Message);
+        Assert.Equal("В процессе · 10%", row.Status);
+
+        localization.Apply(AppLanguage.English); row.RefreshLocalization();
+        Assert.Equal("Operation in progress.", row.Message);
+        Assert.Equal("In progress · 10%", row.Status);
+        localization.Apply(AppLanguage.Russian); row.RefreshLocalization();
+        Assert.Equal("Выполняется операция.", row.Message);
+        Assert.Equal("C:\\source\\runtime.doc", row.SourcePath);
+        Assert.Equal("runtime.docx", row.ResultPath);
+    }
+
+    [Fact]
+    public void Runtime_cancelled_message_relocalizes_from_semantic_status()
+    {
+        var localization = LocalizationService.CreateStandalone(AppLanguage.English);
+        var row = RuntimeRow(localization);
+
+        row.CancelExecution(TimeProvider.System, 0);
+        Assert.Equal(OperationStatus.Cancelled, row.Operation.Status);
+        Assert.Equal(string.Empty, row.Operation.Message);
+        Assert.Equal("Cancelled by user.", row.Message);
+        Assert.Equal("Cancelled", row.Status);
+
+        localization.Apply(AppLanguage.Russian); row.RefreshLocalization();
+        Assert.Equal("Отменено пользователем.", row.Message);
+        Assert.Equal("Отменено", row.Status);
+        localization.Apply(AppLanguage.English); row.RefreshLocalization();
+        Assert.Equal("Cancelled by user.", row.Message);
+        Assert.Equal("C:\\source\\runtime.doc", row.SourcePath);
+        Assert.Equal("runtime.docx", row.ResultPath);
+    }
+
+    [Fact]
+    public void Runtime_not_processed_message_relocalizes_from_semantic_status()
+    {
+        var localization = LocalizationService.CreateStandalone(AppLanguage.English);
+        var row = RuntimeRow(localization);
+
+        row.MarkNotProcessed();
+        Assert.Equal(OperationStatus.NotProcessed, row.Operation.Status);
+        Assert.Equal(string.Empty, row.Operation.Message);
+        Assert.Equal("Not processed.", row.Message);
+        Assert.Equal("Not processed", row.Status);
+
+        localization.Apply(AppLanguage.Russian); row.RefreshLocalization();
+        Assert.Equal("Не обработано.", row.Message);
+        Assert.Equal("Не обработано", row.Status);
     }
 
     [Theory]
@@ -269,6 +348,48 @@ public sealed class LocalizationTests : IDisposable
     }
 
     [Fact]
+    public void Corrupted_settings_are_not_mutated_or_replaced_when_save_is_attempted()
+    {
+        var store = Store();
+        Directory.CreateDirectory(Path.GetDirectoryName(store.SettingsPath)!);
+        const string corrupted = "{broken future settings";
+        File.WriteAllText(store.SettingsPath, corrupted);
+
+        Assert.Null(store.LoadLanguage());
+        Assert.Equal(corrupted, File.ReadAllText(store.SettingsPath));
+        Assert.True(StartupLanguageResolver.Resolve(null, store.LoadLanguage()).ChooserRequired);
+
+        var result = store.TrySaveLanguage(AppLanguage.English);
+
+        Assert.False(result.Success);
+        Assert.Equal("settings_corrupted", result.ErrorCode);
+        Assert.Equal(corrupted, File.ReadAllText(store.SettingsPath));
+        Assert.Empty(Directory.EnumerateFiles(_root, "*.tmp", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void Missing_settings_file_can_be_created()
+    {
+        var store = Store();
+        Assert.False(File.Exists(store.SettingsPath));
+        Assert.True(store.TrySaveLanguage(AppLanguage.English).Success);
+        Assert.Equal(AppLanguage.English, store.LoadLanguage());
+    }
+
+    [Fact]
+    public void Empty_path_label_comes_from_localization_resources()
+    {
+        var ru = LocalizationService.CreateStandalone(AppLanguage.Russian);
+        var en = LocalizationService.CreateStandalone(AppLanguage.English);
+        Assert.Equal("Папка не выбрана", PathDisplayFormatter.Format(string.Empty, localization: ru));
+        Assert.Equal("No folder selected", PathDisplayFormatter.Format(string.Empty, localization: en));
+
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot(), "src", "Zlet.FolderConverter.App", "ViewModels", "PathDisplayFormatter.cs"));
+        Assert.DoesNotContain("Папка не выбрана", source);
+        Assert.DoesNotContain("No folder selected", source);
+    }
+
+    [Fact]
     public void Locked_valid_settings_remain_intact_when_save_fails()
     {
         var store = Store(); Assert.True(store.TrySaveLanguage(AppLanguage.Russian).Success);
@@ -293,6 +414,15 @@ public sealed class LocalizationTests : IDisposable
     }
 
     private AppSettingsStore Store() => new(Path.Combine(_root, "settings.json"));
+
+    private static OperationRowViewModel RuntimeRow(LocalizationService localization)
+    {
+        var operation = new PlannedOperation("C:\\source\\runtime.doc", "runtime.doc", SourceFormat.Doc,
+            ConversionTarget.Docx, ".docx", "C:\\result\\runtime.docx", true,
+            OperationStatus.Ready, "Готово к преобразованию.", "C:\\result", "C:\\source", 1);
+        return new OperationRowViewModel(operation, localization: localization);
+    }
+
     private static Dictionary<string, string> ReadResources(string language)
     {
         XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";

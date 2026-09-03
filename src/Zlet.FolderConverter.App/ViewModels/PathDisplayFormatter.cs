@@ -2,16 +2,17 @@ namespace Zlet.FolderConverter.App.ViewModels;
 
 public static class PathDisplayFormatter
 {
-    public static string EmptyPathPlaceholder => Localization.LocalizationService.Current.Language == Localization.AppLanguage.Russian
-        ? "Папка не выбрана"
-        : "No folder selected";
+    public static string EmptyPathPlaceholder => Localization.LocalizationService.Current.Get("EmptyPathPlaceholder");
     public const int DefaultMaximumLength = 58;
 
-    public static string Format(string? path, int maximumLength = DefaultMaximumLength)
+    public static string Format(
+        string? path,
+        int maximumLength = DefaultMaximumLength,
+        Localization.LocalizationService? localization = null)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
-            return EmptyPathPlaceholder;
+            return (localization ?? Localization.LocalizationService.Current).Get("EmptyPathPlaceholder");
         }
 
         if (maximumLength < 2 || path.Length <= maximumLength)

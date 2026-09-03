@@ -142,7 +142,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    public string SelectedFolderDisplay => PathDisplayFormatter.Format(SelectedFolder);
+    public string SelectedFolderDisplay => PathDisplayFormatter.Format(SelectedFolder, localization: _localization);
     public bool CanCopySelectedFolder => !string.IsNullOrWhiteSpace(SelectedFolder);
     public string SourcePathError
     {

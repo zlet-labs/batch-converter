@@ -41,9 +41,16 @@ public sealed class AppSettingsStore
         JsonObject root;
         try
         {
-            root = File.Exists(SettingsPath)
-                ? JsonNode.Parse(File.ReadAllText(SettingsPath)) as JsonObject ?? new JsonObject()
-                : new JsonObject();
+            if (File.Exists(SettingsPath))
+            {
+                if (JsonNode.Parse(File.ReadAllText(SettingsPath)) is not JsonObject existingRoot)
+                    return new(false, "settings_corrupted");
+                root = existingRoot;
+            }
+            else
+            {
+                root = new JsonObject();
+            }
             root["language"] = AppLanguage.Normalize(language);
             var directory = Path.GetDirectoryName(SettingsPath);
             if (string.IsNullOrWhiteSpace(directory)) return new(false, "invalid_settings_path");
@@ -63,7 +70,7 @@ public sealed class AppSettingsStore
         }
         catch (JsonException)
         {
-            return TryReplaceCorruptedSettings(language);
+            return new(false, "settings_corrupted");
         }
         catch (Exception exception) when (exception is IOException
                                            or UnauthorizedAccessException
@@ -74,33 +81,4 @@ public sealed class AppSettingsStore
         }
     }
 
-    private SettingsSaveResult TryReplaceCorruptedSettings(string language)
-    {
-        try
-        {
-            var directory = Path.GetDirectoryName(SettingsPath);
-            if (string.IsNullOrWhiteSpace(directory)) return new(false, "invalid_settings_path");
-            Directory.CreateDirectory(directory);
-            var temporaryPath = Path.Combine(directory, $"settings.{Guid.NewGuid():N}.tmp");
-            try
-            {
-                var root = new JsonObject { ["language"] = AppLanguage.Normalize(language) };
-                File.WriteAllText(temporaryPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-                File.Move(temporaryPath, SettingsPath, true);
-                return SettingsSaveResult.Saved;
-            }
-            finally
-            {
-                try { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
-            }
-        }
-        catch (Exception exception) when (exception is IOException
-                                           or UnauthorizedAccessException
-                                           or ArgumentException
-                                           or NotSupportedException)
-        {
-            return new(false, "settings_write_failed");
-        }
-    }
 }

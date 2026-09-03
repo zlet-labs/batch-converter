@@ -84,6 +84,7 @@ public static class OperationMessageLocalizer
             {
                 OperationStatus.Ready when target == ConversionTarget.Copy => localization.Get("OperationReadyCopy"),
                 OperationStatus.Ready => localization.Get("OperationReady"),
+                OperationStatus.Converting => localization.Get("OperationExecuting"),
                 OperationStatus.Skipped => localization.Get("OperationSkipped"),
                 OperationStatus.Cancelled => localization.Get("OperationCancelled"),
                 OperationStatus.NotProcessed => localization.Get("OperationNotProcessed"),

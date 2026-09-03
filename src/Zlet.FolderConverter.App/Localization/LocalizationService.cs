@@ -62,16 +62,16 @@ public sealed class LocalizationService
         string.Format(Culture, Get(key), arguments);
 
     public string FileWord(int count)
-        => LocalizationFormatting.FileWord(count, Language);
+        => Get(LocalizationFormatting.FileWordResourceKey(count, Language));
 
     public string FormatFileSize(long bytes)
     {
-        return LocalizationFormatting.FormatFileSize(bytes, Language);
+        return LocalizationFormatting.FormatFileSize(bytes, Culture, Get("MegabyteUnit"));
     }
 
     public string FormatExecutionTime(TimeSpan elapsed)
     {
-        return LocalizationFormatting.FormatExecutionTime(elapsed, Language);
+        return LocalizationFormatting.FormatExecutionTime(elapsed, Culture, Get("SecondUnit"));
     }
 
     private static ResourceDictionary LoadDictionary(string language)

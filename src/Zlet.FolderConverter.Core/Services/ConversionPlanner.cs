@@ -25,8 +25,224 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
         var targetRootPath = Path.GetFullPath(outputRootPath);
 
         return scanResult.Files
-            .Select(file => CreateOperation(file, fullRootPath, targetRootPath, ruleSet.GetRule(file.Format)))
+            .SelectMany(file => CreateOperations(
+                file,
+                fullRootPath,
+                targetRootPath,
+                ruleSet.GetRule(file.Format)))
             .ToArray();
+    }
+
+    private IEnumerable<PlannedOperation> CreateOperations(
+        ScannedFile file,
+        string sourceRootPath,
+        string targetRootPath,
+        ConversionRule rule)
+    {
+        if (rule.Target is ConversionTarget.Csv or ConversionTarget.Tsv
+            && file.Format is SourceFormat.Xls or SourceFormat.Xlsx)
+        {
+            return CreateWorksheetOperations(file, sourceRootPath, targetRootPath, rule);
+        }
+
+        return [CreateOperation(file, sourceRootPath, targetRootPath, rule)];
+    }
+
+    private IReadOnlyList<PlannedOperation> CreateWorksheetOperations(
+        ScannedFile file,
+        string sourceRootPath,
+        string targetRootPath,
+        ConversionRule rule)
+    {
+        var targetExtension = rule.Target.ToExtension();
+        if (!string.IsNullOrWhiteSpace(file.WorksheetInspectionErrorCode))
+        {
+            return
+            [
+                CreateWorksheet(
+                    file,
+                    rule.Target,
+                    targetExtension,
+                    string.Empty,
+                    false,
+                    OperationStatus.Failed,
+                    "Не удалось прочитать список листов Excel.",
+                    targetRootPath,
+                    sourceRootPath,
+                    worksheetName: string.Empty,
+                    WorksheetVisibility.Visible,
+                    worksheetIsEmpty: false,
+                    defaultSelected: false,
+                    resultRelativePath: string.Empty)
+            ];
+        }
+
+        if (file.Worksheets is null)
+        {
+            return [CreateOperation(file, sourceRootPath, targetRootPath, rule)];
+        }
+
+        if (file.Worksheets.Count == 0)
+        {
+            return
+            [
+                CreateWorksheet(
+                    file,
+                    rule.Target,
+                    targetExtension,
+                    string.Empty,
+                    false,
+                    OperationStatus.Skipped,
+                    "В книге Excel не найдено обычных листов.",
+                    targetRootPath,
+                    sourceRootPath,
+                    worksheetName: string.Empty,
+                    WorksheetVisibility.Visible,
+                    worksheetIsEmpty: true,
+                    defaultSelected: false,
+                    resultRelativePath: string.Empty)
+            ];
+        }
+
+        var workbookBaseName = Path.GetFileNameWithoutExtension(file.RelativePath);
+        var outputNames = WorksheetOutputNameBuilder.Build(
+            workbookBaseName,
+            file.Worksheets.Select(sheet => sheet.Name),
+            targetExtension);
+        var relativeDirectory = Path.GetDirectoryName(file.RelativePath) ?? string.Empty;
+        var adapter = adapterResolver.Resolve(file.Format, rule.Target);
+        var adapterAvailable = adapter?.IsAvailable == true;
+        var result = new List<PlannedOperation>(file.Worksheets.Count);
+
+        for (var index = 0; index < file.Worksheets.Count; index++)
+        {
+            var sheet = file.Worksheets[index];
+            var relativeOutput = string.IsNullOrWhiteSpace(relativeDirectory)
+                ? outputNames[index]
+                : Path.Combine(relativeDirectory, outputNames[index]);
+            var targetPath = Path.GetFullPath(Path.Combine(targetRootPath, relativeOutput));
+
+            if (!OutputPathGuard.IsSafeTargetPath(targetPath, targetRootPath))
+            {
+                result.Add(CreateWorksheet(
+                    file,
+                    rule.Target,
+                    targetExtension,
+                    string.Empty,
+                    false,
+                    OperationStatus.Failed,
+                    "Недопустимый путь результата.",
+                    targetRootPath,
+                    sourceRootPath,
+                    sheet.Name,
+                    sheet.Visibility,
+                    sheet.IsEmpty,
+                    defaultSelected: false,
+                    relativeOutput));
+                continue;
+            }
+
+            if (File.Exists(targetPath) || Directory.Exists(targetPath))
+            {
+                result.Add(CreateWorksheet(
+                    file,
+                    rule.Target,
+                    targetExtension,
+                    targetPath,
+                    adapterAvailable,
+                    OperationStatus.Conflict,
+                    "Файл результата уже существует.",
+                    targetRootPath,
+                    sourceRootPath,
+                    sheet.Name,
+                    sheet.Visibility,
+                    sheet.IsEmpty,
+                    defaultSelected: false,
+                    relativeOutput));
+                continue;
+            }
+
+            if (sheet.IsEmpty)
+            {
+                result.Add(CreateWorksheet(
+                    file,
+                    rule.Target,
+                    targetExtension,
+                    targetPath,
+                    adapterAvailable,
+                    OperationStatus.Skipped,
+                    "Пустой лист не экспортируется.",
+                    targetRootPath,
+                    sourceRootPath,
+                    sheet.Name,
+                    sheet.Visibility,
+                    worksheetIsEmpty: true,
+                    defaultSelected: false,
+                    relativeOutput));
+                continue;
+            }
+
+            if (adapter is null)
+            {
+                result.Add(CreateWorksheet(
+                    file,
+                    rule.Target,
+                    targetExtension,
+                    targetPath,
+                    false,
+                    OperationStatus.Unsupported,
+                    "Выбранное преобразование не поддерживается.",
+                    targetRootPath,
+                    sourceRootPath,
+                    sheet.Name,
+                    sheet.Visibility,
+                    worksheetIsEmpty: false,
+                    defaultSelected: false,
+                    relativeOutput));
+                continue;
+            }
+
+            if (!adapterAvailable)
+            {
+                result.Add(CreateWorksheet(
+                    file,
+                    rule.Target,
+                    targetExtension,
+                    targetPath,
+                    false,
+                    OperationStatus.EngineUnavailable,
+                    adapter.AvailabilityMessage,
+                    targetRootPath,
+                    sourceRootPath,
+                    sheet.Name,
+                    sheet.Visibility,
+                    worksheetIsEmpty: false,
+                    defaultSelected: false,
+                    relativeOutput));
+                continue;
+            }
+
+            var hidden = sheet.Visibility != WorksheetVisibility.Visible;
+            result.Add(CreateWorksheet(
+                file,
+                rule.Target,
+                targetExtension,
+                targetPath,
+                true,
+                OperationStatus.Ready,
+                hidden
+                    ? "Скрытый лист. Не выбран по умолчанию."
+                    : "Готово к преобразованию.",
+                targetRootPath,
+                sourceRootPath,
+                sheet.Name,
+                sheet.Visibility,
+                worksheetIsEmpty: false,
+                defaultSelected: !hidden,
+                relativeOutput));
+        }
+
+        return result;
     }
 
     private PlannedOperation CreateOperation(
@@ -168,4 +384,38 @@ public sealed class ConversionPlanner(IConversionAdapterResolver adapterResolver
             outputRootPath,
             sourceRootPath,
             file.SizeBytes);
+
+    private static PlannedOperation CreateWorksheet(
+        ScannedFile file,
+        ConversionTarget target,
+        string targetExtension,
+        string targetPath,
+        bool adapterAvailable,
+        OperationStatus status,
+        string message,
+        string outputRootPath,
+        string sourceRootPath,
+        string worksheetName,
+        WorksheetVisibility worksheetVisibility,
+        bool worksheetIsEmpty,
+        bool defaultSelected,
+        string resultRelativePath) =>
+        new(
+            file.SourcePath,
+            file.RelativePath,
+            file.Format,
+            target,
+            targetExtension,
+            targetPath,
+            adapterAvailable,
+            status,
+            message,
+            outputRootPath,
+            sourceRootPath,
+            file.SizeBytes,
+            worksheetName,
+            worksheetVisibility,
+            worksheetIsEmpty,
+            defaultSelected,
+            resultRelativePath);
 }

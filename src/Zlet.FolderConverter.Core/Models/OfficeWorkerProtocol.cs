@@ -1,9 +1,18 @@
 namespace Zlet.FolderConverter.Core.Models;
 
+public enum OfficeWorkerOperation
+{
+    Convert,
+    InspectWorkbook
+}
+
 public sealed record OfficeWorkerRequest(
     OfficeApplicationKind Application,
     string SourcePath,
-    string OutputPath);
+    string OutputPath,
+    ConversionTarget Target = ConversionTarget.Skip,
+    string WorksheetName = "",
+    OfficeWorkerOperation Operation = OfficeWorkerOperation.Convert);
 
 public enum OfficeWorkerMessageType
 {
@@ -20,4 +29,5 @@ public sealed record OfficeWorkerMessage(
     bool OfficeProcessOwned = false,
     int? HResult = null,
     bool SessionInvalid = false,
-    bool AbandonOfficeProcessOwnership = false);
+    bool AbandonOfficeProcessOwnership = false,
+    IReadOnlyList<WorksheetInfo>? Worksheets = null);

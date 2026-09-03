@@ -2,7 +2,9 @@ namespace Zlet.FolderConverter.App.ViewModels;
 
 public static class PathDisplayFormatter
 {
-    public const string EmptyPathPlaceholder = "Папка не выбрана";
+    public static string EmptyPathPlaceholder => Localization.LocalizationService.Current.Language == Localization.AppLanguage.Russian
+        ? "Папка не выбрана"
+        : "No folder selected";
     public const int DefaultMaximumLength = 58;
 
     public static string Format(string? path, int maximumLength = DefaultMaximumLength)

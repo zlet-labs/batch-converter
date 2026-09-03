@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Zlet.FolderConverter.Core.Models;
+using Zlet.FolderConverter.App.Localization;
 
 namespace Zlet.FolderConverter.App.ViewModels;
 
@@ -21,7 +22,12 @@ public sealed class RuleRowViewModel : INotifyPropertyChanged
         Count = count;
         ExtensionBreakdown = extensionBreakdown;
         Targets = capability.AllowedTargets
-            .Select(target => new ConversionTargetOption(target, target.ToDisplayName()))
+            .Select(target => new ConversionTargetOption(target, target switch
+            {
+                ConversionTarget.Skip => LocalizationService.Current.Get("TargetSkip"),
+                ConversionTarget.Copy => LocalizationService.Current.Get("TargetCopy"),
+                _ => target.ToDisplayName()
+            }))
             .ToArray();
         _selectedTarget = Targets.Single(option => option.Target == selectedTarget);
         _selectionChanged = selectionChanged;
@@ -34,7 +40,7 @@ public sealed class RuleRowViewModel : INotifyPropertyChanged
     public int Count { get; }
     public string ExtensionBreakdown { get; }
     public bool HasExtensionBreakdown => !string.IsNullOrWhiteSpace(ExtensionBreakdown);
-    public IReadOnlyList<ConversionTargetOption> Targets { get; }
+    public IReadOnlyList<ConversionTargetOption> Targets { get; private set; }
 
     public ConversionTargetOption SelectedTarget
     {
@@ -50,6 +56,22 @@ public sealed class RuleRowViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             _selectionChanged(SourceFormat, value.Target);
         }
+    }
+
+    public void RefreshLocalization()
+    {
+        var selected = _selectedTarget.Target;
+        Targets = Targets.Select(option => new ConversionTargetOption(
+            option.Target,
+            option.Target switch
+            {
+                ConversionTarget.Skip => LocalizationService.Current.Get("TargetSkip"),
+                ConversionTarget.Copy => LocalizationService.Current.Get("TargetCopy"),
+                _ => option.Target.ToDisplayName()
+            })).ToArray();
+        _selectedTarget = Targets.Single(option => option.Target == selected);
+        OnPropertyChanged(nameof(Targets));
+        OnPropertyChanged(nameof(SelectedTarget));
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>

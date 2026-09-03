@@ -5,7 +5,7 @@ namespace Zlet.FolderConverter.App.ViewModels;
 
 public static class ExtensionBreakdownFormatter
 {
-    private const string NoExtensionLabel = "Без расширения";
+    private static string NoExtensionLabel => Localization.LocalizationService.Current.Get("NoExtension");
 
     public static string Format(IEnumerable<ScannedFile> files)
     {

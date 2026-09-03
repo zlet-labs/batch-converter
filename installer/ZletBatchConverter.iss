@@ -22,7 +22,7 @@
 
 #define AppName "Zlet Converter"
 #define AppPublisher "Zlet Labs"
-#define AppUrl "https://github.com/zlet-labs/batch-converter"
+#define AppUrl "https://github.com/zlet-labs/zlet-converter"
 #define SetupBaseName "ZletConverter-v" + AppVersion + "-Setup-" + RuntimeIdentifier
 
 [Setup]

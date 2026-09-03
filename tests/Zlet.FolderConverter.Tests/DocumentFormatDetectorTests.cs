@@ -17,7 +17,24 @@ public sealed class DocumentFormatDetectorTests
     [InlineData("sample.ods", SourceFormat.Ods)]
     [InlineData("sample.odp", SourceFormat.Odp)]
     [InlineData("sample.pdf", SourceFormat.Pdf)]
+    [InlineData("sample.csv", SourceFormat.Csv)]
+    [InlineData("sample.TSV", SourceFormat.Tsv)]
+    [InlineData("sample.epub", SourceFormat.Epub)]
     [InlineData("sample.png", SourceFormat.Image)]
+    [InlineData("sample.AVIF", SourceFormat.Image)]
+    [InlineData("sample.bmp", SourceFormat.Image)]
+    [InlineData("sample.gif", SourceFormat.Image)]
+    [InlineData("sample.heic", SourceFormat.Image)]
+    [InlineData("sample.heif", SourceFormat.Image)]
+    [InlineData("sample.ico", SourceFormat.Image)]
+    [InlineData("sample.jp2", SourceFormat.Image)]
+    [InlineData("sample.jpe", SourceFormat.Image)]
+    [InlineData("sample.jpeg", SourceFormat.Image)]
+    [InlineData("sample.jpg", SourceFormat.Image)]
+    [InlineData("sample.tif", SourceFormat.Image)]
+    [InlineData("sample.tiff", SourceFormat.Image)]
+    [InlineData("sample.webp", SourceFormat.Image)]
+    [InlineData("sample.svg", SourceFormat.Unknown)]
     [InlineData("sample.zip", SourceFormat.Archive)]
     [InlineData("sample.xyz", SourceFormat.Unknown)]
     public void Detect_classifies_mixed_formats_case_insensitively(
@@ -34,6 +51,8 @@ public sealed class DocumentFormatDetectorTests
     [InlineData(ConversionTarget.Xlsx, ".xlsx")]
     [InlineData(ConversionTarget.Pptx, ".pptx")]
     [InlineData(ConversionTarget.Pdf, ".pdf")]
+    [InlineData(ConversionTarget.Csv, ".csv")]
+    [InlineData(ConversionTarget.Tsv, ".tsv")]
     public void GetTargetExtension_returns_expected_mapping(
         ConversionTarget target,
         string expectedExtension)

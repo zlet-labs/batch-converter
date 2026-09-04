@@ -6,7 +6,8 @@ public static class DocumentFormatDetector
 {
     private static readonly HashSet<string> ImageExtensions =
     [
-        ".bmp", ".gif", ".heic", ".jpeg", ".jpg", ".png", ".svg", ".tif", ".tiff", ".webp"
+        ".avif", ".bmp", ".gif", ".heic", ".heif", ".ico", ".jp2", ".jpe",
+        ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"
     ];
 
     private static readonly HashSet<string> ArchiveExtensions =
@@ -30,6 +31,9 @@ public static class DocumentFormatDetector
             ".ods" => SourceFormat.Ods,
             ".odp" => SourceFormat.Odp,
             ".pdf" => SourceFormat.Pdf,
+            ".csv" => SourceFormat.Csv,
+            ".tsv" => SourceFormat.Tsv,
+            ".epub" => SourceFormat.Epub,
             _ when ImageExtensions.Contains(extension) => SourceFormat.Image,
             _ when ArchiveExtensions.Contains(extension) => SourceFormat.Archive,
             _ => SourceFormat.Unknown

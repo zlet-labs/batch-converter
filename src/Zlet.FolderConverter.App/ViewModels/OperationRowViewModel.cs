@@ -28,7 +28,8 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         Operation = result is null
             ? operation
             : result.Operation with { Status = result.Status, Message = result.Message };
-        _isSelected = Operation.Status == OperationStatus.Ready && (isSelected ?? true);
+        _isSelected = Operation.Status == OperationStatus.Ready
+            && (isSelected ?? Operation.DefaultSelected);
         _isNotSelected = isNotSelected;
         Result = result;
         _selectionChanged = selectionChanged;
@@ -69,7 +70,9 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
     }
 
     public string SourcePath => Operation.SourcePath;
-    public string FilePath => Operation.RelativePath;
+    public string FilePath => Operation.IsWorksheetOperation
+        ? $"{Operation.RelativePath} / {Operation.WorksheetName}"
+        : Operation.RelativePath;
     public string ActionLabel => Operation.Target switch
     {
         ConversionTarget.Skip => _localization.Get("TargetSkip"),
@@ -79,7 +82,9 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
     public string TargetPath => Operation.TargetPath;
     public string ResultPath => Operation.Target == ConversionTarget.Skip
         ? "—"
-        : Path.ChangeExtension(Operation.RelativePath, Operation.TargetExtension);
+        : !string.IsNullOrWhiteSpace(Operation.ResultRelativePath)
+            ? Operation.ResultRelativePath
+            : Path.ChangeExtension(Operation.RelativePath, Operation.TargetExtension);
     public string FileSizeText => _localization.FormatFileSize(Operation.SourceSizeBytes);
     public string ExecutionTimeText => (_executionElapsed ?? _liveExecutionElapsed) is { } elapsed
         ? _localization.FormatExecutionTime(elapsed)
@@ -88,13 +93,18 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
     {
         get
         {
-            if (_isNotSelected && Operation.Status == OperationStatus.Ready) return _localization.Get("StatusNotSelected");
-            var text = LocalizeStatus(
+            var text = _isNotSelected && Operation.Status == OperationStatus.Ready ? _localization.Get("StatusNotSelected") : LocalizeStatus(
                 Operation.Status,
                 Operation.Target,
                 Operation.Message,
                 Result?.Diagnostic?.ErrorCode ?? string.Empty,
                 _localization);
+            if (Operation.IsWorksheetOperation)
+            {
+                if (Operation.WorksheetIsEmpty) text += " · " + _localization.Get("EmptyLabel");
+                if (Operation.WorksheetVisibility != WorksheetVisibility.Visible) text += " · " + _localization.Get(
+                    Operation.WorksheetVisibility == WorksheetVisibility.VeryHidden ? "VeryHiddenLabel" : "HiddenLabel");
+            }
             return _operationPercent.HasValue ? $"{text} · {_operationPercent.Value.ToString(_localization.Culture)}%" : text;
         }
     }

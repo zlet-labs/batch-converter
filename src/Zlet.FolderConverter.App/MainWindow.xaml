@@ -275,7 +275,7 @@
                                             <DataTemplate>
                                                 <ComboBox ItemsSource="{Binding Targets}"
                                                           SelectedItem="{Binding SelectedTarget, Mode=TwoWay}"
-                                                          IsEnabled="{Binding DataContext.CanChangeSettings, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          IsEnabled="{Binding DataContext.CanChangeRules, RelativeSource={RelativeSource AncestorType=Window}}"
                                                           MinWidth="112">
                                                     <ComboBox.ItemTemplate>
                                                         <DataTemplate>
@@ -578,6 +578,8 @@
                                 <StackPanel>
                                     <TextBlock Text="{Binding FinalReportTitle}"
                                                FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding WorksheetSummaryText}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                    <TextBlock Text="{Binding ReportStatusText}" TextWrapping="Wrap" Margin="0,6,0,0" />
                                     <WrapPanel Margin="0,5,0,0">
                                         <TextBlock Text="{Binding FinalConvertedText}" Margin="0,0,14,0" />
                                         <TextBlock Text="{Binding FinalCopiedText}" Margin="0,0,14,0" />

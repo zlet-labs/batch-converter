@@ -24,4 +24,5 @@ public sealed record OfficeWorkerExecutionResult(
     bool HasStandardOutput = false,
     bool HasStandardError = false,
     int? HResult = null,
-    bool SessionInvalid = false);
+    bool SessionInvalid = false,
+    IReadOnlyList<WorksheetInfo>? Worksheets = null);

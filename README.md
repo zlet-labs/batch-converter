@@ -16,7 +16,7 @@
   <img alt="MIT License" src="https://img.shields.io/badge/license-MIT-22c55e">
 </p>
 
-Zlet Converter is a small local Windows utility for batch-processing files in folders and subfolders. It converts supported legacy Microsoft Office files, safely copies already-modern Office files, preserves relative folder structure, and keeps document processing on your computer.
+Zlet Converter is a small local Windows utility for batch-processing files in folders and subfolders. It converts supported legacy Microsoft Office files, safely copies already-compatible files, preserves relative folder structure, and keeps processing on your computer.
 
 The application UI supports Russian and English in the same package. On first launch, choose a language explicitly; change it later under **Settings → Language** without restarting or losing the current preview/results. Only the language setting is stored in `%LOCALAPPDATA%\Zlet Labs\Zlet Converter\settings.json`; no account, cloud service, or backend is required. Packagers can set the initial choice with `ZletConverter.exe --language=ru-RU` or `--language=en-US`.
 
@@ -42,18 +42,17 @@ The application UI supports Russian and English in the same package. On first la
 
 ## Gemini Notebook and modern document workflows
 
-Preparing older document collections for **Gemini Notebook** is one practical use case for Zlet Converter. Google currently lists DOCX, PPTX, TXT and Markdown among supported Gemini Notebook source types, so the converter can help prepare:
+Preparing document collections for **Gemini Notebook** is one practical use case for Zlet Converter. The current development branch expands local preparation beyond legacy Office conversion: Excel workbooks can be exported to one UTF-8 CSV per worksheet, and already-compatible PDFs, CSV files, EPUBs and supported image files can be safely copied unchanged.
 
-- `.doc` → `.docx`
-- `.ppt` → `.pptx`
-- `.json` → `.txt` or `.md`
-- already-modern `.docx` and `.pptx` files as unchanged safe copies
+Zlet Converter remains a general-purpose local conversion and file preparation tool. Check the destination service's current format requirements before using the results; CSV/TSV exports do not imply integration or guaranteed acceptance by Gemini Notebook.
 
 Gemini Notebook source support: [Google Help](https://support.google.com/gemininotebook/answer/16215270?co=GENIE.Platform%3DDesktop&hl=en)
 
 **There is no Gemini Notebook integration or automatic upload.** Zlet Converter processes files locally; you decide if and when to upload the resulting files to Gemini Notebook or another service.
 
 ## Supported formats
+
+### Current public release v0.0.2
 
 | Source | Result | Requirement |
 |---|---|---|
@@ -63,7 +62,31 @@ Gemini Notebook source support: [Google Help](https://support.google.com/geminin
 | `.docx`, `.xlsx`, `.pptx` | unchanged safe copy | Office not required |
 | `.json` | `.txt` or `.md` | Office not required |
 
-Word, Excel, and PowerPoint are detected independently. If one Office application is missing, only the corresponding legacy conversion becomes unavailable; the rest of the batch can still run.
+### Development source after ZL-056
+
+These capabilities are **not yet part of the published v0.0.2 binaries** and must not be treated as released until a later release is published.
+
+| Source | Result | Requirement |
+|---|---|---|
+| `.doc` | `.docx` | Microsoft Word installed |
+| `.xls` | `.xlsx` | Microsoft Excel installed |
+| `.xls`, `.xlsx` | one UTF-8 `.csv` per worksheet | Microsoft Excel installed |
+| `.xls`, `.xlsx` | one UTF-8 `.tsv` per worksheet | Microsoft Excel installed |
+| `.ppt` | `.pptx` | Microsoft PowerPoint installed |
+| `.docx`, `.xlsx`, `.pptx` | unchanged safe copy | Office not required |
+| `.pdf`, `.csv`, `.tsv`, `.epub` | unchanged safe copy | Office not required |
+| `.avif`, `.bmp`, `.gif`, `.heic`, `.heif`, `.ico`, `.jp2`, `.jpe`, `.jpeg`, `.jpg`, `.png`, `.tif`, `.tiff`, `.webp` | unchanged safe copy | Office not required |
+| `.json` | `.txt` or `.md` | Office not required |
+
+For Excel sheet exports, each worksheet is a separate Preview operation. Hidden and very-hidden worksheets remain visible but are not selected by default; empty worksheets are skipped explicitly. Output names are deterministic and Windows-safe, such as `sales__Summary.csv`.
+
+Development builds also generate a human-readable `ZletConverter-report.txt` with relative paths, batch counters, worksheet accounting, statuses and safe diagnostics. Existing report names are not silently overwritten; deterministic `-2`, `-3`, ... suffixes are used.
+
+The final panel retains aggregate and per-workbook sheet summaries, including hidden and empty sheets skipped. A workbook counts as one source file even when it produces several worksheet files. Reports are saved in the result folder or at the ZIP root, including after Stop or partial failure. Report failures remain visible. New controls and report labels follow the existing RU/EN language setting; switching language preserves the preview and results.
+
+Real Excel sheet tests are opt-in: set `ZLET_OFFICE_INTEGRATION=1`, `ZLET_OFFICE_XLSX_SHEETS_FIXTURE` and/or `ZLET_OFFICE_XLS_SHEETS_FIXTURE` to local multi-sheet workbooks with at least two nonempty two-column worksheets, then run the `OfficeIntegration` test category. Include hidden/very-hidden sheets, Unicode values and cross-sheet formulas in manual QA. Automated tests do not substitute for integrated v0.0.3 manual QA, which remains pending before merge.
+
+Word, Excel, and PowerPoint are detected independently. If one Office application is missing, only the corresponding conversion becomes unavailable; safe-copy operations continue without Office.
 
 > **PowerPoint safety:** PPT conversion is refused while user PowerPoint is already running. This avoids interfering with an open presentation. DOC/XLS conversion and unchanged PPTX copying remain available.
 
@@ -88,6 +111,7 @@ Packaged builds are self-contained for .NET 8, so the .NET runtime does not need
 - Conversion list copy using relative paths only.
 - Separate final counters for converted, copied, failed, conflict, unavailable, skipped, and unselected items.
 - Safer multi-file Office processing through reusable worker/session handling where appropriate.
+- In ZL-056 development builds: per-worksheet Excel export planning and a persistent human-readable TXT report.
 
 ## Limitations
 
@@ -103,7 +127,7 @@ The converter is intentionally local-first and defensive around user files.
 - Files are processed locally and are not uploaded.
 - The UI process does not perform Office COM automation directly.
 - Office conversion runs through an isolated STA worker process.
-- Legacy files are opened read-only.
+- Legacy files and Excel workbooks used for worksheet export are opened read-only.
 - Macros, dialogs, and Recent/MRU additions are disabled for worker-controlled Office sessions.
 - Source files must remain inside the selected source folder.
 - Reparse-point files and folders are skipped.
@@ -112,7 +136,8 @@ The converter is intentionally local-first and defensive around user files.
 - Existing output files/directories are not overwritten.
 - Office processes are never terminated by process name alone.
 - Forced cleanup is allowed only for an app-owned process whose PID and start time were proven.
-- Failure of one file does not automatically stop the remaining selected files.
+- Failure of one file or worksheet does not automatically stop the remaining selected operations.
+- TXT reports use relative paths and must not contain document contents, passwords, secrets or tokens.
 
 Technical diagnostics may contain error codes and process metadata. They must not contain document contents, secrets, or full local document paths.
 

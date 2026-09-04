@@ -89,6 +89,14 @@ internal sealed class SafeFileOperationExecutor
             "output",
             $"result{operation.TargetExtension}");
         string? stagingPath = null;
+        var allowEmptyCopy = operation.Target == ConversionTarget.Copy
+            && operation.SourceFormat is SourceFormat.Csv or SourceFormat.Tsv && snapshot.Length == 0;
+        async Task<OutputValidationResult> ValidateOutputAsync(string path)
+        {
+            if (!allowEmptyCopy) return _validator.Validate(path, validationTarget);
+            return await snapshot.IsUnchangedAsync(path, cancellationToken)
+                ? new OutputValidationResult(true) : new OutputValidationResult(false, "copy_integrity_mismatch");
+        }
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(temporaryOutput)!);
@@ -110,7 +118,7 @@ internal sealed class SafeFileOperationExecutor
             progress?.Report(55);
 
             if (!File.Exists(temporaryOutput)
-                || new FileInfo(temporaryOutput).Length == 0)
+                || (new FileInfo(temporaryOutput).Length == 0 && !allowEmptyCopy))
             {
                 return Result(
                     operation,
@@ -130,7 +138,7 @@ internal sealed class SafeFileOperationExecutor
                     "output_extension_invalid");
             }
 
-            var temporaryValidation = _validator.Validate(temporaryOutput, validationTarget);
+            var temporaryValidation = await ValidateOutputAsync(temporaryOutput);
             if (!temporaryValidation.IsValid)
             {
                 return Result(
@@ -183,7 +191,7 @@ internal sealed class SafeFileOperationExecutor
                 targetDirectory,
                 $".{Path.GetFileName(operation.TargetPath)}.{Guid.NewGuid():N}.tmp");
             File.Copy(temporaryOutput, stagingPath, overwrite: false);
-            var stagingValidation = _validator.Validate(stagingPath, validationTarget);
+            var stagingValidation = await ValidateOutputAsync(stagingPath);
             if (!stagingValidation.IsValid)
             {
                 return Result(
@@ -196,7 +204,7 @@ internal sealed class SafeFileOperationExecutor
 
             File.Move(stagingPath, operation.TargetPath, overwrite: false);
             stagingPath = null;
-            var finalValidation = _validator.Validate(operation.TargetPath, validationTarget);
+            var finalValidation = await ValidateOutputAsync(operation.TargetPath);
             if (!finalValidation.IsValid)
             {
                 File.Delete(operation.TargetPath);

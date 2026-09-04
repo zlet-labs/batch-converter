@@ -27,6 +27,7 @@ public sealed class OutputResultValidator : IOutputResultValidator
                 ConversionTarget.Pptx => ValidateZip(targetPath, "ppt/presentation.xml"),
                 ConversionTarget.Pdf => ValidatePdf(targetPath),
                 ConversionTarget.Txt or ConversionTarget.Markdown => new OutputValidationResult(true),
+                ConversionTarget.Csv or ConversionTarget.Tsv or ConversionTarget.Copy => new OutputValidationResult(true),
                 _ => new OutputValidationResult(false, "unsupported_output_validation")
             };
         }

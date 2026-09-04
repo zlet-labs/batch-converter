@@ -12,7 +12,7 @@ internal static class Program
     private static int Main()
     {
         using var automation = new ComOfficeAutomation();
-        var dispatcher = new OfficeConversionDispatcher(automation);
+        using var dispatcher = new OfficeConversionDispatcher(automation);
         try
         {
             while (Console.In.ReadLine() is { } input)
@@ -91,29 +91,61 @@ internal static class OfficeRequestValidator
         try
         {
             var source = Path.GetFullPath(request.SourcePath);
-            var output = Path.GetFullPath(request.OutputPath);
-            var expected = request.Application switch
+            if (!File.Exists(source) || HasReparsePoint(source))
             {
-                OfficeApplicationKind.Word => (Source: ".doc", Output: ".docx"),
-                OfficeApplicationKind.Excel => (Source: ".xls", Output: ".xlsx"),
-                OfficeApplicationKind.PowerPoint => (Source: ".ppt", Output: ".pptx"),
-                _ => (Source: string.Empty, Output: string.Empty)
+                return false;
+            }
+
+            var sourceExtension = Path.GetExtension(source);
+            if (request.Operation == OfficeWorkerOperation.InspectWorkbook)
+            {
+                return request.Application == OfficeApplicationKind.Excel
+                       && (sourceExtension.Equals(".xls", StringComparison.OrdinalIgnoreCase)
+                           || sourceExtension.Equals(".xlsx", StringComparison.OrdinalIgnoreCase));
+            }
+
+            var target = request.Target == ConversionTarget.Skip
+                ? request.Application switch
+                {
+                    OfficeApplicationKind.Word => ConversionTarget.Docx,
+                    OfficeApplicationKind.Excel => ConversionTarget.Xlsx,
+                    OfficeApplicationKind.PowerPoint => ConversionTarget.Pptx,
+                    _ => ConversionTarget.Skip
+                }
+                : request.Target;
+
+            var validMapping = request.Application switch
+            {
+                OfficeApplicationKind.Word =>
+                    sourceExtension.Equals(".doc", StringComparison.OrdinalIgnoreCase)
+                    && target == ConversionTarget.Docx,
+                OfficeApplicationKind.Excel when target == ConversionTarget.Xlsx =>
+                    sourceExtension.Equals(".xls", StringComparison.OrdinalIgnoreCase),
+                OfficeApplicationKind.Excel when target is ConversionTarget.Csv or ConversionTarget.Tsv =>
+                    (sourceExtension.Equals(".xls", StringComparison.OrdinalIgnoreCase)
+                     || sourceExtension.Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
+                    && !string.IsNullOrWhiteSpace(request.WorksheetName),
+                OfficeApplicationKind.PowerPoint =>
+                    sourceExtension.Equals(".ppt", StringComparison.OrdinalIgnoreCase)
+                    && target == ConversionTarget.Pptx,
+                _ => false
             };
+            if (!validMapping)
+            {
+                return false;
+            }
+
+            var output = Path.GetFullPath(request.OutputPath);
+            var expectedOutput = target.ToExtension();
             var outputDirectory = Path.GetDirectoryName(output);
-            return !string.IsNullOrWhiteSpace(expected.Source)
-                   && File.Exists(source)
-                   && !File.Exists(output)
+            return !File.Exists(output)
                    && !Directory.Exists(output)
                    && !string.IsNullOrWhiteSpace(outputDirectory)
                    && Directory.Exists(outputDirectory)
-                   && Path.GetExtension(source).Equals(
-                       expected.Source,
-                       StringComparison.OrdinalIgnoreCase)
                    && Path.GetExtension(output).Equals(
-                       expected.Output,
+                       expectedOutput,
                        StringComparison.OrdinalIgnoreCase)
                    && !string.Equals(source, output, StringComparison.OrdinalIgnoreCase)
-                   && !HasReparsePoint(source)
                    && !HasReparsePoint(outputDirectory);
         }
         catch (Exception exception) when (exception is ArgumentException

@@ -9,7 +9,9 @@ public enum ConversionTarget
     Docx,
     Xlsx,
     Pptx,
-    Pdf
+    Pdf,
+    Csv,
+    Tsv
 }
 
 public static class ConversionTargetExtensions
@@ -24,6 +26,8 @@ public static class ConversionTargetExtensions
         ConversionTarget.Xlsx => "XLSX",
         ConversionTarget.Pptx => "PPTX",
         ConversionTarget.Pdf => "PDF",
+        ConversionTarget.Csv => "CSV",
+        ConversionTarget.Tsv => "TSV",
         _ => "Не трогать"
     };
 
@@ -37,6 +41,8 @@ public static class ConversionTargetExtensions
         ConversionTarget.Xlsx => ".xlsx",
         ConversionTarget.Pptx => ".pptx",
         ConversionTarget.Pdf => ".pdf",
+        ConversionTarget.Csv => ".csv",
+        ConversionTarget.Tsv => ".tsv",
         ConversionTarget.Skip => string.Empty,
         _ => throw new ArgumentOutOfRangeException(nameof(target), target, "Unknown conversion target.")
     };

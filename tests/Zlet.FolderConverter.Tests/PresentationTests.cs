@@ -125,9 +125,9 @@ public sealed class PresentationTests : IDisposable
         Assert.Equal(3, viewModel.FormatRules.Count);
         Assert.Equal(ConversionTarget.Txt, RuleFor(viewModel, SourceFormat.Json).SelectedTarget.Target);
         Assert.Equal(ConversionTarget.Copy, RuleFor(viewModel, SourceFormat.Docx).SelectedTarget.Target);
-        Assert.Equal(ConversionTarget.Skip, RuleFor(viewModel, SourceFormat.Pdf).SelectedTarget.Target);
-        Assert.Equal(2, viewModel.ReadyCount);
-        Assert.Equal(1, viewModel.SkippedCount);
+        Assert.Equal(ConversionTarget.Copy, RuleFor(viewModel, SourceFormat.Pdf).SelectedTarget.Target);
+        Assert.Equal(3, viewModel.ReadyCount);
+        Assert.Equal(0, viewModel.SkippedCount);
     }
 
     [Fact]
@@ -268,6 +268,7 @@ public sealed class PresentationTests : IDisposable
         var viewModel = CreateViewModel();
         await viewModel.ScanAsync();
 
+        RuleFor(viewModel, SourceFormat.Pdf).SelectedTarget = RuleFor(viewModel, SourceFormat.Pdf).Targets.Single(option => option.Target == ConversionTarget.Skip);
         viewModel.SelectedPreviewFilter = viewModel.PreviewFilters.Single(option =>
             option.Filter == PreviewFilter.Skip);
 
@@ -307,10 +308,11 @@ public sealed class PresentationTests : IDisposable
         await viewModel.ConvertAsync();
 
         Assert.True(viewModel.HasFinalReport);
-        Assert.Equal(1, viewModel.FinalSucceeded);
+        Assert.Equal(2, viewModel.FinalSucceeded);
+        Assert.Equal(1, viewModel.FinalCopied);
         Assert.Equal(0, viewModel.FinalFailed);
         Assert.Equal(0, viewModel.FinalUnavailable);
-        Assert.Equal(1, viewModel.FinalSkipped);
+        Assert.Equal(0, viewModel.FinalSkipped);
         Assert.Equal("Преобразовано · 100%", viewModel.Operations.Single(row =>
             row.Operation.SourceFormat == SourceFormat.Json).Status);
         Assert.True(File.Exists(Path.Combine(_rootPath, "_converted", "users.txt")));
@@ -467,16 +469,16 @@ public sealed class PresentationTests : IDisposable
         await viewModel.ScanAsync();
 
         Assert.Equal(1, viewModel.ReadyCount);
-        Assert.Equal(1, viewModel.UnavailableCount);
-        Assert.Equal(1, viewModel.SkippedCount);
+        Assert.Equal(2, viewModel.UnavailableCount);
+        Assert.Equal(0, viewModel.SkippedCount);
         Assert.Equal(0, viewModel.ErrorCount);
         Assert.Equal("Преобразовать 1 файл", viewModel.ConvertButtonText);
 
         await viewModel.ConvertAsync();
 
         Assert.Equal(1, viewModel.FinalSucceeded);
-        Assert.Equal(1, viewModel.FinalUnavailable);
-        Assert.Equal(1, viewModel.FinalSkipped);
+        Assert.Equal(2, viewModel.FinalUnavailable);
+        Assert.Equal(0, viewModel.FinalSkipped);
         Assert.Equal(0, viewModel.FinalFailed);
         Assert.Equal(0, viewModel.ReadyCount);
         Assert.False(viewModel.CanConvert);
@@ -755,9 +757,6 @@ public sealed class PresentationTests : IDisposable
     [Fact]
     public async Task Partial_json_batch_creates_zip_with_only_success_and_preserves_sources()
     {
-        var stagingParent = Path.Combine(
-            Path.GetTempPath(), "ZletBatchConverter", "result-staging");
-        var stagingBefore = ExistingDirectories(stagingParent);
         var validPath = Write(Path.Combine("nested", "valid.json"), "{\"value\":1}");
         var invalidPath = Write("invalid.json", "{invalid");
         var validHash = Hash(validPath);
@@ -768,16 +767,17 @@ public sealed class PresentationTests : IDisposable
         viewModel.OutputPath = zipPath;
 
         await viewModel.ScanAsync();
+        var stagingRoot = viewModel.Operations[0].Operation.OutputRootPath;
         await viewModel.ConvertAsync();
 
         Assert.True(File.Exists(zipPath));
         using var archive = ZipFile.OpenRead(zipPath);
-        Assert.Equal("nested/valid.txt", Assert.Single(archive.Entries).FullName);
+        Assert.Equal(new[] { "nested/valid.txt", "ZletConverter-report.txt" }, archive.Entries.Select(entry => entry.FullName));
         Assert.Equal(1, viewModel.FinalSucceeded);
         Assert.Equal(1, viewModel.FinalFailed);
         Assert.Equal(validHash, Hash(validPath));
         Assert.Equal(invalidHash, Hash(invalidPath));
-        Assert.Equal(stagingBefore, ExistingDirectories(stagingParent));
+        Assert.False(Directory.Exists(stagingRoot));
     }
 
     public void Dispose()
@@ -869,13 +869,6 @@ public sealed class PresentationTests : IDisposable
 
     private static string Hash(string path) =>
         Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
-
-    private static string[] ExistingDirectories(string path) =>
-        Directory.Exists(path)
-            ? Directory.EnumerateDirectories(path)
-                .Order(StringComparer.OrdinalIgnoreCase)
-                .ToArray()
-            : [];
 
     private sealed class CallbackScanner(string root) : IFolderScanner
     {

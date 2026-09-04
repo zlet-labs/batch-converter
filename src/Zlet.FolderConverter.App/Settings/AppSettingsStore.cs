@@ -20,6 +20,22 @@ public sealed class AppSettingsStore
 
     public string SettingsPath { get; }
 
+    public SettingsSaveResult TryReset(bool confirmed)
+    {
+        if (!confirmed) return new(false, "reset_cancelled");
+        try
+        {
+            // Delete only this store's file, including corrupt JSON; never traverse directories.
+            File.Delete(SettingsPath);
+            return SettingsSaveResult.Saved;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                                        or ArgumentException or NotSupportedException)
+        {
+            return new(false, "settings_reset_failed");
+        }
+    }
+
     public string? LoadLanguage()
     {
         try

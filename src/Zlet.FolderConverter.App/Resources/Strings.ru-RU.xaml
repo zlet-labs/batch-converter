@@ -28,4 +28,42 @@
   <sys:String x:Key="OperationSkipped">Файл не будет изменён.</sys:String><sys:String x:Key="OperationReadyCopy">Будет скопирован без изменений.</sys:String><sys:String x:Key="OperationUnsupported">Выбранное преобразование не поддерживается.</sys:String><sys:String x:Key="OperationUnavailable">Преобразование недоступно.</sys:String><sys:String x:Key="OperationInvalidTarget">Недопустимый путь результата.</sys:String><sys:String x:Key="OperationTargetExists">Файл результата уже существует.</sys:String><sys:String x:Key="OperationUnsafeSource">Исходный файл небезопасен или находится вне выбранной папки.</sys:String><sys:String x:Key="OperationSourceUnreadable">Не удалось открыть исходный файл.</sys:String><sys:String x:Key="OperationOutputMissing">Приложение не создало ожидаемый результат.</sys:String><sys:String x:Key="OperationOutputExtensionInvalid">Расширение результата не прошло проверку.</sys:String><sys:String x:Key="OperationOutputInvalid">Формат результата не прошёл проверку.</sys:String><sys:String x:Key="OperationSourceChanged">Исходный файл изменился во время обработки.</sys:String><sys:String x:Key="OperationProcessingFailed">Не удалось обработать файл.</sys:String><sys:String x:Key="OperationInvalidJson">Некорректный JSON.</sys:String><sys:String x:Key="OperationCopyUnsupported">Копирование этого формата не поддерживается.</sys:String><sys:String x:Key="OperationOfficeMissing">Требуемое приложение Microsoft Office не установлено.</sys:String><sys:String x:Key="OperationOfficeComponentUnavailable">Компонент преобразования Microsoft Office недоступен.</sys:String><sys:String x:Key="OperationTimeout">Преобразование превысило допустимое время.</sys:String><sys:String x:Key="OperationOfficeFailure">Не удалось преобразовать файл в Microsoft Office.</sys:String><sys:String x:Key="OperationPowerPointRunning">PowerPoint уже запущен. Закройте его и повторите преобразование.</sys:String><sys:String x:Key="OperationPowerPointProtected">Сеанс PowerPoint изменён; файл не преобразован для защиты пользовательской презентации.</sys:String><sys:String x:Key="OperationPowerPointStartFailed">PowerPoint не запустился.</sys:String><sys:String x:Key="OperationPowerPointStartFailedAdvice">PowerPoint не запустился. Откройте PowerPoint вручную и повторите.</sys:String>
   <sys:String x:Key="FormatImage">Изображения</sys:String><sys:String x:Key="FormatArchive">Архивы</sys:String><sys:String x:Key="FormatUnknown">Другие</sys:String>
   <sys:String x:Key="SettingsSaveFailed">Язык изменён для текущего сеанса, но настройку не удалось сохранить. Проверьте доступ к локальной папке приложения.</sys:String>
+  <sys:String x:Key="SettingsGeneral">Общие</sys:String>
+  <sys:String x:Key="SettingsUpdates">Обновления</sys:String>
+  <sys:String x:Key="SettingsDiagnostics">Диагностика</sys:String>
+  <sys:String x:Key="SettingsAbout">О программе</sys:String>
+  <sys:String x:Key="SettingsVersion">Версия: {0}</sys:String>
+  <sys:String x:Key="CheckUpdates">Проверить обновления</sys:String>
+  <sys:String x:Key="OpenRelease">Открыть страницу релиза</sys:String>
+  <sys:String x:Key="UpdateDisclosure">Обращение к GitHub — только по нажатию кнопки. Только стабильные релизы.</sys:String>
+  <sys:String x:Key="UpdateIdle">Обновления ещё не проверялись.</sys:String>
+  <sys:String x:Key="UpdateChecking">Проверка обновлений…</sys:String>
+  <sys:String x:Key="UpdateCurrent">Установлена актуальная версия · v{0}</sys:String>
+  <sys:String x:Key="UpdateAvailable">Доступна новая версия · v{0}</sys:String>
+  <sys:String x:Key="UpdateNetworkError">Не удалось проверить обновления · Нет подключения к интернету или ошибка соединения</sys:String>
+  <sys:String x:Key="UpdateTimeout">Не удалось проверить обновления · Время ожидания истекло</sys:String>
+  <sys:String x:Key="UpdateGitHubError">Не удалось проверить обновления · Ошибка GitHub</sys:String>
+  <sys:String x:Key="UpdateRateLimit">Не удалось проверить обновления · Ограничение доступа или запросов GitHub; повторите позже</sys:String>
+  <sys:String x:Key="UpdateMalformed">Не удалось проверить обновления · Некорректный ответ GitHub</sys:String>
+  <sys:String x:Key="UpdateEmpty">Подходящих стабильных релизов не найдено.</sys:String>
+  <sys:String x:Key="UpdateInvalidVersion">Не удалось проверить обновления · Неизвестный формат версии приложения</sys:String>
+  <sys:String x:Key="CopyDiagnostics">Копировать диагностику</sys:String>
+  <sys:String x:Key="DiagnosticsWindows">Версия Windows: {0}</sys:String>
+  <sys:String x:Key="DiagnosticsOsArch">Архитектура ОС: {0}</sys:String>
+  <sys:String x:Key="DiagnosticsAppArch">Архитектура приложения: {0}</sys:String>
+  <sys:String x:Key="DiagnosticsLanguage">Язык: {0}</sys:String>
+  <sys:String x:Key="DiagnosticsCopied">Диагностика скопирована.</sys:String>
+  <sys:String x:Key="DiagnosticsCopyFailed">Не удалось скопировать диагностику. Повторите попытку.</sys:String>
+  <sys:String x:Key="ResetSettings">Сбросить настройки</sys:String>
+  <sys:String x:Key="ResetConfirm">Сбросить настройки приложения? При следующем запуске потребуется выбрать язык. Ваши файлы и результаты преобразования сохранятся.</sys:String>
+  <sys:String x:Key="ResetSuccess">Настройки сброшены. При следующем запуске выберите язык. Изменение языка здесь сохранит новую настройку.</sys:String>
+  <sys:String x:Key="ResetFailed">Не удалось сбросить настройки. Повторите попытку.</sys:String>
+  <sys:String x:Key="AboutPublisher">Zlet Labs · PRE-ALPHA</sys:String>
+  <sys:String x:Key="AboutPrivacy">Преобразование выполняется локально; файлы не загружаются в интернет. Проверка обновлений обращается к GitHub только по вашему действию.</sys:String>
+  <sys:String x:Key="AboutProduct">Сайт продукта</sys:String>
+  <sys:String x:Key="AboutRepository">Репозиторий</sys:String>
+  <sys:String x:Key="AboutReleases">Релизы</sys:String>
+  <sys:String x:Key="AboutIssue">Сообщить о проблеме</sys:String>
+  <sys:String x:Key="AboutLicense">Лицензия · MIT</sys:String>
+  <sys:String x:Key="BrowserFailed">Не удалось открыть браузер.</sys:String>
 </ResourceDictionary>

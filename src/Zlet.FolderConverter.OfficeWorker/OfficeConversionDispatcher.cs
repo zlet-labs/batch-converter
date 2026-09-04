@@ -5,7 +5,8 @@ namespace Zlet.FolderConverter.OfficeWorker;
 internal sealed class OfficeConversionDispatcher : IDisposable
 {
     private readonly IOfficeAutomation _automation;
-    private readonly ExcelWorksheetAutomation _excelWorksheetAutomation;
+    private readonly IExcelWorksheetAutomation _excelWorksheetAutomation;
+    private bool? _worksheetRoute;
 
     public OfficeConversionDispatcher(IOfficeAutomation automation)
         : this(automation, new ExcelWorksheetAutomation())
@@ -14,7 +15,7 @@ internal sealed class OfficeConversionDispatcher : IDisposable
 
     internal OfficeConversionDispatcher(
         IOfficeAutomation automation,
-        ExcelWorksheetAutomation excelWorksheetAutomation)
+        IExcelWorksheetAutomation excelWorksheetAutomation)
     {
         _automation = automation;
         _excelWorksheetAutomation = excelWorksheetAutomation;
@@ -24,9 +25,18 @@ internal sealed class OfficeConversionDispatcher : IDisposable
         OfficeWorkerRequest request,
         Action<OfficeWorkerMessage> report)
     {
-        if (request.Application == OfficeApplicationKind.Excel
+        var worksheetRoute = request.Application == OfficeApplicationKind.Excel
             && (request.Operation == OfficeWorkerOperation.InspectWorkbook
-                || request.Target is ConversionTarget.Csv or ConversionTarget.Tsv))
+                || request.Target is ConversionTarget.Csv or ConversionTarget.Tsv);
+        if (_worksheetRoute.HasValue && _worksheetRoute != worksheetRoute)
+        {
+            // The parent worker tracks one owned Office process. Close the previous
+            // automation session before another route reports a new process identity.
+            if (_worksheetRoute.Value) _excelWorksheetAutomation.Dispose();
+            else if (_automation is IDisposable disposable) disposable.Dispose();
+        }
+        _worksheetRoute = worksheetRoute;
+        if (worksheetRoute)
         {
             return _excelWorksheetAutomation.Execute(request, report);
         }
@@ -44,6 +54,11 @@ internal sealed class OfficeConversionDispatcher : IDisposable
     }
 
     public void Dispose() => _excelWorksheetAutomation.Dispose();
+}
+
+internal interface IExcelWorksheetAutomation : IDisposable
+{
+    OfficeWorkerMessage Execute(OfficeWorkerRequest request, Action<OfficeWorkerMessage> report);
 }
 
 internal interface IOfficeAutomation

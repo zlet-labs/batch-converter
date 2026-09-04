@@ -757,9 +757,6 @@ public sealed class PresentationTests : IDisposable
     [Fact]
     public async Task Partial_json_batch_creates_zip_with_only_success_and_preserves_sources()
     {
-        var stagingParent = Path.Combine(
-            Path.GetTempPath(), "ZletBatchConverter", "result-staging");
-        var stagingBefore = ExistingDirectories(stagingParent);
         var validPath = Write(Path.Combine("nested", "valid.json"), "{\"value\":1}");
         var invalidPath = Write("invalid.json", "{invalid");
         var validHash = Hash(validPath);
@@ -770,6 +767,7 @@ public sealed class PresentationTests : IDisposable
         viewModel.OutputPath = zipPath;
 
         await viewModel.ScanAsync();
+        var stagingRoot = viewModel.Operations[0].Operation.OutputRootPath;
         await viewModel.ConvertAsync();
 
         Assert.True(File.Exists(zipPath));
@@ -779,7 +777,7 @@ public sealed class PresentationTests : IDisposable
         Assert.Equal(1, viewModel.FinalFailed);
         Assert.Equal(validHash, Hash(validPath));
         Assert.Equal(invalidHash, Hash(invalidPath));
-        Assert.Equal(stagingBefore, ExistingDirectories(stagingParent));
+        Assert.False(Directory.Exists(stagingRoot));
     }
 
     public void Dispose()
@@ -871,13 +869,6 @@ public sealed class PresentationTests : IDisposable
 
     private static string Hash(string path) =>
         Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
-
-    private static string[] ExistingDirectories(string path) =>
-        Directory.Exists(path)
-            ? Directory.EnumerateDirectories(path)
-                .Order(StringComparer.OrdinalIgnoreCase)
-                .ToArray()
-            : [];
 
     private sealed class CallbackScanner(string root) : IFolderScanner
     {

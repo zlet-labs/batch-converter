@@ -5,7 +5,7 @@ using Zlet.FolderConverter.Core.Models;
 
 namespace Zlet.FolderConverter.OfficeWorker;
 
-internal sealed class ExcelWorksheetAutomation : IDisposable
+internal sealed class ExcelWorksheetAutomation : IExcelWorksheetAutomation
 {
     private bool _applicationOwned;
     private const int AutomationSecurityForceDisable = 3;

@@ -18,6 +18,8 @@
 
 Zlet Converter is a small local Windows utility for batch-processing files in folders and subfolders. It converts supported legacy Microsoft Office files, safely copies already-modern Office files, preserves relative folder structure, and keeps document processing on your computer.
 
+The application UI supports Russian and English in the same package. On first launch, choose a language explicitly; change it later under **Settings → Language** without restarting or losing the current preview/results. Only the language setting is stored in `%LOCALAPPDATA%\Zlet Labs\Zlet Converter\settings.json`; no account, cloud service, or backend is required. Packagers can set the initial choice with `ZletConverter.exe --language=ru-RU` or `--language=en-US`.
+
 > **v0.0.2 is PRE-ALPHA.** The installer is currently unsigned, so Windows may show an Unknown publisher or SmartScreen warning. Microsoft Office is not included.
 
 > **Rename note:** the current public v0.0.2 release was published under the previous public name `Zlet Batch Converter`. Its existing release title, executable, installer, portable ZIP, and asset filenames remain unchanged as historical artifacts. Builds after ZL-057 use `Zlet Converter` / `ZletConverter` naming.

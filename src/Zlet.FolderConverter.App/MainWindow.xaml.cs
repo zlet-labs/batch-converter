@@ -3,12 +3,14 @@ using System.IO;
 using System.Windows;
 using Forms = System.Windows.Forms;
 using Zlet.FolderConverter.App.ViewModels;
+using Zlet.FolderConverter.App.Localization;
 using Zlet.FolderConverter.Core.Services;
 
 namespace Zlet.FolderConverter.App;
 
 public partial class MainWindow : Window
 {
+    private static LocalizationService Loc => LocalizationService.Current;
     private readonly MainWindowViewModel _viewModel;
 
     public MainWindow()
@@ -34,7 +36,7 @@ public partial class MainWindow : Window
     {
         using var dialog = new Forms.FolderBrowserDialog
         {
-            Description = "Выберите папку с файлами для преобразования",
+            Description = Loc.Get("ChooseSourceDialog"),
             UseDescriptionForTitle = true
         };
 
@@ -57,12 +59,12 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
-            _viewModel.StateMessage = "Проверка отменена.";
+            _viewModel.SetLocalizedState("ScanCancelled");
         }
         catch (Exception)
         {
-            _viewModel.AddError("Не удалось проверить папку. Повторите попытку или выберите другую папку.");
-            _viewModel.StateMessage = "Проверка завершилась ошибкой.";
+            _viewModel.AddLocalizedError("ScanFailed");
+            _viewModel.SetLocalizedState("ScanFailedState");
         }
     }
 
@@ -101,7 +103,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            _viewModel.AddError("Не удалось скопировать список в буфер обмена.");
+            _viewModel.AddLocalizedError("CopyListFailed");
         }
     }
 
@@ -118,7 +120,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            _viewModel.AddError("Не удалось скопировать путь в буфер обмена.");
+            _viewModel.AddLocalizedError("CopyPathFailed");
         }
     }
 
@@ -130,12 +132,12 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
-            _viewModel.StateMessage = "Обработка отменена.";
+            _viewModel.SetLocalizedState("ConversionCancelled");
         }
         catch (Exception)
         {
-            _viewModel.AddError("Не удалось завершить обработку. Проверьте доступ к папке и повторите попытку.");
-            _viewModel.StateMessage = "Обработка завершилась ошибкой.";
+            _viewModel.AddLocalizedError("ConversionFailed");
+            _viewModel.SetLocalizedState("ConversionFailedState");
         }
     }
 
@@ -148,7 +150,7 @@ public partial class MainWindow : Window
         {
             using var dialog = new Forms.FolderBrowserDialog
             {
-                Description = "Выберите папку для результатов",
+                Description = Loc.Get("ChooseResultFolderDialog"),
                 UseDescriptionForTitle = true,
                 SelectedPath = Directory.Exists(_viewModel.OutputPath)
                     ? _viewModel.OutputPath
@@ -163,8 +165,8 @@ public partial class MainWindow : Window
 
         using var saveDialog = new Forms.SaveFileDialog
         {
-            Title = "Выберите ZIP для результатов",
-            Filter = "ZIP-архив (*.zip)|*.zip",
+            Title = Loc.Get("ChooseResultZipDialog"),
+            Filter = Loc.Get("ZipFilter"),
             DefaultExt = "zip",
             AddExtension = true,
             OverwritePrompt = false,
@@ -203,7 +205,16 @@ public partial class MainWindow : Window
         }
         catch
         {
-            _viewModel.AddError("Не удалось открыть папку результата.");
+            _viewModel.AddLocalizedError("OpenResultFailed");
         }
+    }
+
+    private void SettingsButton_Click(object sender, RoutedEventArgs e) =>
+        new SettingsWindow { Owner = this }.ShowDialog();
+
+    public void ShowSettingsSaveFailure()
+    {
+        _viewModel.SetLocalizedState("SettingsSaveFailed");
+        _viewModel.AddLocalizedError("SettingsSaveFailed");
     }
 }

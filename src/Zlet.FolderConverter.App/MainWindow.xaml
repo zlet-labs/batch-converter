@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Zlet.FolderConverter.App"
         mc:Ignorable="d"
-        Title="Zlet Batch Converter v0.0.2"
+        Title="Zlet Converter v0.0.2"
         Icon="Assets/ZletBatchConverter.ico"
         Width="1280"
         Height="780"
@@ -75,19 +75,24 @@
                             </TextBlock>
                         </Border>
                     </StackPanel>
-                    <TextBlock Text="Массовое преобразование файлов в папках и подпапках"
+                    <TextBlock Text="{DynamicResource Subtitle}"
                                Margin="0,4,0,0"
                                FontSize="14"
                                Foreground="{StaticResource TextSecondaryBrush}" />
                 </StackPanel>
-                <Border Grid.Column="1"
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button Content="{DynamicResource SettingsTitle}"
+                        Style="{StaticResource CompactButtonStyle}"
+                        Margin="0,0,10,0" Click="SettingsButton_Click" />
+                <Border
                         Style="{StaticResource PrivacyBadgeStyle}"
                         VerticalAlignment="Center">
-                    <TextBlock Text="●  Локально · Файлы не отправляются в интернет"
+                    <TextBlock Text="{DynamicResource PrivacyBadge}"
                                FontSize="14"
                                FontWeight="SemiBold"
                                Foreground="#B9F4FF" />
                 </Border>
+                </StackPanel>
             </Grid>
 
             <Border Grid.Row="1"
@@ -138,29 +143,29 @@
                     </Grid>
 
                     <Button Grid.Column="2"
-                            Content="Копировать"
+                            Content="{DynamicResource Copy}"
                             Style="{StaticResource CompactButtonStyle}"
-                            ToolTip="Копировать полный путь"
+                            ToolTip="{DynamicResource CopyPathTooltip}"
                             Margin="0,0,10,0"
                             IsEnabled="{Binding CanCopySelectedFolder}"
                             Click="CopyFolderButton_Click" />
 
                     <Button Grid.Column="3"
-                            Content="Обзор"
+                            Content="{DynamicResource Browse}"
                             Style="{StaticResource SecondaryButtonStyle}"
                             Margin="0,0,10,0"
                             IsEnabled="{Binding CanChangeSettings}"
                             Click="ChooseFolderButton_Click" />
 
                     <CheckBox Grid.Column="4"
-                              Content="Включать подпапки"
+                              Content="{DynamicResource IncludeSubfolders}"
                               Style="{StaticResource ToggleSwitchStyle}"
                               IsChecked="{Binding IncludeSubfolders}"
                               Margin="0,0,12,0"
                               IsEnabled="{Binding CanChangeSettings}" />
 
                     <Button Grid.Column="5"
-                            Content="Найти файлы"
+                            Content="{DynamicResource ScanFiles}"
                             Style="{StaticResource PrimaryButtonStyle}"
                             IsEnabled="{Binding CanScan}"
                             Click="ScanButton_Click" />
@@ -198,17 +203,17 @@
                                            FontWeight="Bold" />
                             </Border>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Text="Правила"
+                                <TextBlock Text="{DynamicResource Rules}"
                                            FontSize="17"
                                            FontWeight="SemiBold" />
-                                <TextBlock Text="Одно действие для каждого формата"
+                                <TextBlock Text="{DynamicResource RulesDescription}"
                                            FontSize="14"
                                            Foreground="{StaticResource TextTertiaryBrush}" />
                             </StackPanel>
                         </Grid>
 
                         <Grid Grid.Row="1">
-                            <TextBlock Text="После сканирования здесь появятся найденные форматы."
+                            <TextBlock Text="{DynamicResource EmptyRules}"
                                        Margin="16"
                                        TextWrapping="Wrap"
                                        Foreground="{StaticResource TextTertiaryBrush}"
@@ -237,7 +242,7 @@
                                     </DataTemplate>
                                 </DataGrid.RowDetailsTemplate>
                                 <DataGrid.Columns>
-                                    <DataGridTemplateColumn Header="Формат" Width="*">
+                                    <DataGridTemplateColumn Header="{DynamicResource Format}" Width="*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel VerticalAlignment="Center"
@@ -248,7 +253,7 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="Найден" Width="72">
+                                    <DataGridTemplateColumn Header="{DynamicResource Found}" Width="72">
                                         <DataGridTemplateColumn.HeaderStyle>
                                             <Style TargetType="DataGridColumnHeader"
                                                    BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
@@ -265,7 +270,7 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="Что делать" Width="150">
+                                    <DataGridTemplateColumn Header="{DynamicResource Action}" Width="150">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <ComboBox ItemsSource="{Binding Targets}"
@@ -317,7 +322,7 @@
                                            FontWeight="Bold" />
                             </Border>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Text="Preview операций"
+                                <TextBlock Text="{DynamicResource Preview}"
                                            FontSize="17"
                                            FontWeight="SemiBold" />
                                 <TextBlock Text="{Binding StateMessage}"
@@ -344,27 +349,27 @@
                                 Padding="14,8">
                             <UniformGrid Columns="6">
                                 <StackPanel>
-                                    <TextBlock Text="Найдено" Style="{StaticResource MetricLabelStyle}" />
+                                    <TextBlock Text="{DynamicResource Found}" Style="{StaticResource MetricLabelStyle}" />
                                     <TextBlock Text="{Binding FoundCount}" Style="{StaticResource MetricValueStyle}" />
                                 </StackPanel>
                                 <StackPanel>
-                                    <TextBlock Text="Преобразуем" Style="{StaticResource MetricLabelStyle}" />
+                                    <TextBlock Text="{DynamicResource ReadyMetric}" Style="{StaticResource MetricLabelStyle}" />
                                     <TextBlock Text="{Binding ReadyCount}" Style="{StaticResource MetricValueStyle}" Foreground="#70E4FF" />
                                 </StackPanel>
                                 <StackPanel>
-                                    <TextBlock Text="Не трогаем" Style="{StaticResource MetricLabelStyle}" />
+                                    <TextBlock Text="{DynamicResource SkipMetric}" Style="{StaticResource MetricLabelStyle}" />
                                     <TextBlock Text="{Binding SkippedCount}" Style="{StaticResource MetricValueStyle}" />
                                 </StackPanel>
                                 <StackPanel>
-                                    <TextBlock Text="Недоступно" Style="{StaticResource MetricLabelStyle}" />
+                                    <TextBlock Text="{DynamicResource UnavailableMetric}" Style="{StaticResource MetricLabelStyle}" />
                                     <TextBlock Text="{Binding UnavailableCount}" Style="{StaticResource MetricValueStyle}" Foreground="#FFD37A" />
                                 </StackPanel>
                                 <StackPanel>
-                                    <TextBlock Text="Конфликты" Style="{StaticResource MetricLabelStyle}" />
+                                    <TextBlock Text="{DynamicResource ConflictsMetric}" Style="{StaticResource MetricLabelStyle}" />
                                     <TextBlock Text="{Binding ConflictCount}" Style="{StaticResource MetricValueStyle}" Foreground="#FBBF72" />
                                 </StackPanel>
                                 <StackPanel>
-                                    <TextBlock Text="Ошибки" Style="{StaticResource MetricLabelStyle}" />
+                                    <TextBlock Text="{DynamicResource ErrorsMetric}" Style="{StaticResource MetricLabelStyle}" />
                                     <TextBlock Text="{Binding ErrorCount}" Style="{StaticResource MetricValueStyle}" Foreground="#FF8E9E" />
                                 </StackPanel>
                             </UniformGrid>
@@ -388,22 +393,22 @@
                                                Foreground="#70E4FF" />
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal">
-                                    <Button Content="Выбрать все"
+                                    <Button Content="{DynamicResource SelectAll}"
                                             Style="{StaticResource CompactButtonStyle}"
                                             Margin="0,0,8,0"
                                             IsEnabled="{Binding CanChangeSettings}"
                                             Click="SelectAllButton_Click" />
-                                    <Button Content="Снять выбор"
+                                    <Button Content="{DynamicResource ClearSelection}"
                                             Style="{StaticResource CompactButtonStyle}"
                                             Margin="0,0,8,0"
                                             IsEnabled="{Binding CanChangeSettings}"
                                             Click="ClearSelectionButton_Click" />
-                                    <Button Content="Инвертировать"
+                                    <Button Content="{DynamicResource InvertSelection}"
                                             Style="{StaticResource CompactButtonStyle}"
                                             Margin="0,0,8,0"
                                             IsEnabled="{Binding CanChangeSettings}"
                                             Click="InvertSelectionButton_Click" />
-                                    <Button Content="Копировать список"
+                                    <Button Content="{DynamicResource CopyList}"
                                             Style="{StaticResource CompactButtonStyle}"
                                             IsEnabled="{Binding CanCopyConversionList}"
                                             Click="CopyConversionListButton_Click" />
@@ -484,7 +489,7 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="Исходный файл" Width="1.5*">
+                                    <DataGridTemplateColumn Header="{DynamicResource SourceFile}" Width="1.5*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <TextBlock Text="{Binding FilePath}"
@@ -493,13 +498,13 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="Размер"
+                                    <DataGridTextColumn Header="{DynamicResource Size}"
                                                         Binding="{Binding FileSizeText}"
                                                         Width="82" />
-                                    <DataGridTextColumn Header="Действие"
+                                    <DataGridTextColumn Header="{DynamicResource Action}"
                                                         Binding="{Binding ActionLabel}"
                                                         Width="145" />
-                                    <DataGridTemplateColumn Header="Результат" Width="1.25*">
+                                    <DataGridTemplateColumn Header="{DynamicResource Result}" Width="1.25*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <TextBlock Text="{Binding ResultPath}"
@@ -508,7 +513,7 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="Статус" Width="220">
+                                    <DataGridTemplateColumn Header="{DynamicResource Status}" Width="220">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <Border CornerRadius="10"
@@ -550,7 +555,7 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="Время"
+                                    <DataGridTextColumn Header="{DynamicResource Time}"
                                                         Binding="{Binding ExecutionTimeText}"
                                                         Width="72" />
                                 </DataGrid.Columns>
@@ -574,13 +579,13 @@
                                     <TextBlock Text="{Binding FinalReportTitle}"
                                                FontWeight="SemiBold" />
                                     <WrapPanel Margin="0,5,0,0">
-                                        <TextBlock Text="{Binding FinalConverted, StringFormat=Преобразовано: {0}}" Margin="0,0,14,0" />
-                                        <TextBlock Text="{Binding FinalCopied, StringFormat=Скопировано: {0}}" Margin="0,0,14,0" />
-                                        <TextBlock Text="{Binding FinalFailed, StringFormat=Ошибок: {0}}" Margin="0,0,14,0" />
-                                        <TextBlock Text="{Binding FinalConflicts, StringFormat=Конфликтов: {0}}" Margin="0,0,14,0" />
-                                        <TextBlock Text="{Binding FinalUnavailable, StringFormat=Недоступно: {0}}" Margin="0,0,14,0" />
-                                        <TextBlock Text="{Binding FinalSkipped, StringFormat=Пропущено: {0}}" />
-                                        <TextBlock Text="{Binding FinalNotSelected, StringFormat=Не выбрано: {0}}" Margin="14,0,0,0" />
+                                        <TextBlock Text="{Binding FinalConvertedText}" Margin="0,0,14,0" />
+                                        <TextBlock Text="{Binding FinalCopiedText}" Margin="0,0,14,0" />
+                                        <TextBlock Text="{Binding FinalFailedText}" Margin="0,0,14,0" />
+                                        <TextBlock Text="{Binding FinalConflictsText}" Margin="0,0,14,0" />
+                                        <TextBlock Text="{Binding FinalUnavailableText}" Margin="0,0,14,0" />
+                                        <TextBlock Text="{Binding FinalSkippedText}" />
+                                        <TextBlock Text="{Binding FinalNotSelectedText}" Margin="14,0,0,0" />
                                         <TextBlock Text="{Binding FinalDurationText}" Margin="14,0,0,0" FontWeight="SemiBold" />
                                     </WrapPanel>
                                     <TextBlock Text="{Binding ResultFolder}"
@@ -597,7 +602,7 @@
                                             BorderThickness="1"
                                             Visibility="{Binding HasErrors, Converter={StaticResource BoolToVisibilityConverter}}">
                                         <StackPanel>
-                                            <TextBlock Text="Ошибки по файлам"
+                                            <TextBlock Text="{DynamicResource FileErrors}"
                                                        FontWeight="SemiBold"
                                                        Foreground="#FFB4BE" />
                                             <ScrollViewer MaxHeight="96"
@@ -686,7 +691,7 @@
                             IsEnabled="{Binding CanChangeSettings}"
                             Click="ChooseOutputButton_Click" />
                     <Button Grid.Column="3"
-                            Content="Сбросить"
+                            Content="{DynamicResource Reset}"
                             Style="{StaticResource CompactButtonStyle}"
                             Margin="0,0,10,0"
                             VerticalAlignment="Top"
@@ -726,7 +731,7 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Преобразование"
+                            <TextBlock Text="{DynamicResource Conversion}"
                                        FontWeight="SemiBold" />
                             <TextBlock Grid.Column="1"
                                        Text="{Binding ProgressCountText}"
@@ -752,7 +757,7 @@
                                          Maximum="100"
                                          Value="{Binding ProgressPercent, Mode=OneWay}" />
                             <TextBlock Grid.Row="2"
-                                       Text="{Binding CurrentFile, StringFormat=Файл: {0}}"
+                                       Text="{Binding CurrentFileText}"
                                        ToolTip="{Binding CurrentFile}"
                                        TextTrimming="CharacterEllipsis"
                                        Foreground="{StaticResource TextSecondaryBrush}" />

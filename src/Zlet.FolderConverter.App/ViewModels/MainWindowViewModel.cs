@@ -4,6 +4,7 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Threading;
 using Zlet.FolderConverter.App;
+using Zlet.FolderConverter.App.Localization;
 using Zlet.FolderConverter.Core.Models;
 using Zlet.FolderConverter.Core.Services;
 
@@ -17,6 +18,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly IReadOnlyList<OfficeApplicationAvailability> _officeAvailability;
     private readonly TimeProvider _timeProvider;
     private readonly DispatcherTimer _progressTimer;
+    private readonly LocalizationService _localization;
+    private readonly List<LocalizedErrorEntry> _errorEntries = [];
     private string _selectedFolder = string.Empty;
     private string _sourcePathError = string.Empty;
     private bool _includeSubfolders = true;
@@ -25,8 +28,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _isStopping;
     private CancellationTokenSource? _conversionCancellation;
     private string _copyListStatus = string.Empty;
-    private string _stateMessage = "Выберите папку и найдите файлы.";
-    private string _emptyStateMessage = "Preview появится после сканирования папки.";
+    private int? _copiedListCount;
+    private bool _copyListWasEmpty;
+    private string _stateMessage = string.Empty;
+    private string _emptyStateMessage = string.Empty;
+    private string? _stateResourceKey = "InitialState";
+    private object[] _stateArguments = [];
+    private string? _emptyResourceKey = "InitialEmpty";
     private RuleSet _ruleSet = RuleSet.CreateDefault();
     private ScanResult? _lastScan;
     private string _scanRoot = string.Empty;
@@ -44,11 +52,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private int _progressTotal;
     private long _conversionStartTimestamp;
     private TimeSpan? _completedElapsed;
-    private string _elapsedTimeText = "Прошло: 00:00";
-    private string _remainingTimeText = "Осталось: рассчитываем…";
+    private string _elapsedTimeText = string.Empty;
+    private string _remainingTimeText = string.Empty;
     private string _finalDurationText = string.Empty;
     private bool _hasFinalReport;
-    private string _finalReportTitle = "Обработка завершена";
+    private string _finalReportTitle = string.Empty;
+    private bool _finalWasStopped;
     private int _finalConverted;
     private int _finalCopied;
     private int _finalFailed;
@@ -76,9 +85,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IConversionPlanner conversionPlanner,
         IConversionProcessor? conversionProcessor = null,
         IMicrosoftOfficeCapabilityDetector? officeCapabilityDetector = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        LocalizationService? localization = null)
     {
         _folderScanner = folderScanner;
+        _localization = localization ?? LocalizationService.Current;
         _conversionPlanner = conversionPlanner;
         _conversionProcessor = conversionProcessor
             ?? new ConversionProcessor(new DefaultConversionAdapterResolver());
@@ -90,16 +101,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             Interval = TimeSpan.FromSeconds(1)
         };
         _progressTimer.Tick += (_, _) => RefreshConversionTiming();
-        PreviewFilters =
-        [
-            new(PreviewFilter.All, "Все"),
-            new(PreviewFilter.Convert, "К преобразованию"),
-            new(PreviewFilter.Skip, "Не трогаем"),
-            new(PreviewFilter.Unavailable, "Недоступно"),
-            new(PreviewFilter.Conflicts, "Конфликты"),
-            new(PreviewFilter.Errors, "Ошибки")
-        ];
+        PreviewFilters = [];
+        OutputModes = [];
+        RebuildLocalizedOptions();
         _selectedPreviewFilter = PreviewFilters[0];
+        _stateMessage = L("InitialState");
+        _emptyStateMessage = L("InitialEmpty");
+        _finalReportTitle = L("FinalComplete");
+        ClearCompletedConversionTiming();
+        _localization.LanguageChanged += (_, _) => RefreshLocalization();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -107,7 +117,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<RuleRowViewModel> FormatRules { get; } = [];
     public ObservableCollection<OperationRowViewModel> Operations { get; } = [];
     public ObservableCollection<string> ErrorMessages { get; } = [];
-    public IReadOnlyList<PreviewFilterOption> PreviewFilters { get; }
+    public ObservableCollection<PreviewFilterOption> PreviewFilters { get; }
     public string WordOfficeStatus => GetOfficeStatus(OfficeApplicationKind.Word);
     public string ExcelOfficeStatus => GetOfficeStatus(OfficeApplicationKind.Excel);
     public string PowerPointOfficeStatus => GetOfficeStatus(OfficeApplicationKind.PowerPoint);
@@ -126,13 +136,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(CanCopySelectedFolder));
                 UpdateSourcePathError();
                 RefreshDefaultOutputPaths();
-                InvalidateScan("Папка изменена. Нажмите «Найти файлы».");
+                InvalidateScan("FolderChanged");
                 NotifyAvailability();
             }
         }
     }
 
-    public string SelectedFolderDisplay => PathDisplayFormatter.Format(SelectedFolder);
+    public string SelectedFolderDisplay => PathDisplayFormatter.Format(SelectedFolder, localization: _localization);
     public bool CanCopySelectedFolder => !string.IsNullOrWhiteSpace(SelectedFolder);
     public string SourcePathError
     {
@@ -147,8 +157,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
     public bool HasSourcePathError => !string.IsNullOrWhiteSpace(SourcePathError);
 
-    public IReadOnlyList<OutputModeOption> OutputModes { get; } =
-        [new(OutputMode.Folder, "Папка"), new(OutputMode.Zip, "ZIP-архив")];
+    public ObservableCollection<OutputModeOption> OutputModes { get; }
 
     public OutputModeOption SelectedOutputModeOption
     {
@@ -187,12 +196,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     public string OutputModeLabel => SelectedOutputMode == OutputMode.Folder
-        ? "Папка"
-        : "ZIP-архив";
+        ? L("OutputFolder")
+        : L("OutputZip");
 
     public string OutputBrowseButtonText => SelectedOutputMode == OutputMode.Folder
-        ? "Выбрать папку"
-        : "Выбрать ZIP";
+        ? L("ChooseOutputFolder")
+        : L("ChooseOutputZip");
 
     public string OutputPath
     {
@@ -252,7 +261,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             if (SetProperty(ref _includeSubfolders, value))
             {
-                InvalidateScan("Настройка подпапок изменена. Нажмите «Найти файлы».");
+                InvalidateScan("SubfoldersChanged");
             }
         }
     }
@@ -323,7 +332,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public bool ShowProgress => IsConverting;
     public bool ShowStopButton => IsConverting;
     public bool CanStop => IsConverting && !IsStopping;
-    public string StopButtonText => IsStopping ? "Останавливаем…" : "Остановить";
+    public string StopButtonText => IsStopping ? L("Stopping") : L("Stop");
     public bool CanCopyConversionList => HasPreview && !IsBusy;
     public string CopyListStatus
     {
@@ -334,8 +343,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ? Directory.Exists(ResultFolder)
         : File.Exists(ResultFolder);
     public string ResultActionText => SelectedOutputMode == OutputMode.Folder
-        ? "Открыть папку результата"
-        : "Показать ZIP в проводнике";
+        ? L("OpenResultFolder")
+        : L("ShowZip");
 
     public int FoundCount
     {
@@ -371,7 +380,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     public int SelectableCount => Operations.Count(row => row.CanSelect);
-    public string SelectionSummary => $"Выбрано: {SelectedReadyCount} из {SelectableCount}";
+    public string SelectionSummary => _localization.Format("SelectionFormat", SelectedReadyCount, SelectableCount);
 
     public int SkippedCount
     {
@@ -398,30 +407,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     public string ConvertButtonText => SelectedReadyCount == 0
-        ? "Выберите файлы"
-        : $"Преобразовать {SelectedReadyCount} {GetRussianFileWord(SelectedReadyCount)}";
+        ? L("ChooseFiles")
+        : _localization.Format("ConvertFilesFormat", SelectedReadyCount, _localization.FileWord(SelectedReadyCount));
 
-    public static string GetRussianFileWord(int count)
-    {
-        var absolute = Math.Abs(count);
-        var lastTwoDigits = absolute % 100;
-        if (lastTwoDigits is >= 11 and <= 14)
-        {
-            return "файлов";
-        }
-
-        return (absolute % 10) switch
-        {
-            1 => "файл",
-            2 or 3 or 4 => "файла",
-            _ => "файлов"
-        };
-    }
+    public static string GetRussianFileWord(int count) => LocalizationService.Current.FileWord(count);
 
     public string StateMessage
     {
         get => _stateMessage;
-        set => SetProperty(ref _stateMessage, value);
+        set
+        {
+            _stateResourceKey = null;
+            SetProperty(ref _stateMessage, value);
+        }
     }
 
     public string EmptyStateMessage
@@ -442,13 +440,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    public string ProgressPercentText => $"{ProgressPercent:0}%";
-    public string ProgressCountText => $"{_progressCompleted} из {_progressTotal}";
+    public string ProgressPercentText => $"{ProgressPercent.ToString("0", _localization.Culture)}%";
+    public string ProgressCountText => _localization.Format("ProgressCountFormat", _progressCompleted, _progressTotal);
 
     public string CurrentFile
     {
         get => _currentFile;
-        private set => SetProperty(ref _currentFile, value);
+        private set
+        {
+            if (SetProperty(ref _currentFile, value)) OnPropertyChanged(nameof(CurrentFileText));
+        }
     }
 
     public string ElapsedTimeText
@@ -481,9 +482,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set
         {
             if (SetProperty(ref _finalConverted, value))
+            {
                 OnPropertyChanged(nameof(FinalSucceeded));
+                OnPropertyChanged(nameof(FinalConvertedText));
+            }
         }
     }
+    public string CurrentFileText => _localization.Format("CurrentFileFormat", CurrentFile);
 
     public string FinalReportTitle
     {
@@ -497,39 +502,49 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set
         {
             if (SetProperty(ref _finalCopied, value))
+            {
                 OnPropertyChanged(nameof(FinalSucceeded));
+                OnPropertyChanged(nameof(FinalCopiedText));
+            }
         }
     }
     public int FinalSucceeded => FinalConverted + FinalCopied;
+    public string FinalConvertedText => _localization.Format("FinalConvertedFormat", FinalConverted);
+    public string FinalCopiedText => _localization.Format("FinalCopiedFormat", FinalCopied);
+    public string FinalFailedText => _localization.Format("FinalFailedFormat", FinalFailed);
+    public string FinalConflictsText => _localization.Format("FinalConflictsFormat", FinalConflicts);
+    public string FinalUnavailableText => _localization.Format("FinalUnavailableFormat", FinalUnavailable);
+    public string FinalSkippedText => _localization.Format("FinalSkippedFormat", FinalSkipped);
+    public string FinalNotSelectedText => _localization.Format("FinalNotSelectedFormat", FinalNotSelected);
 
     public int FinalFailed
     {
         get => _finalFailed;
-        private set => SetProperty(ref _finalFailed, value);
+        private set { if (SetProperty(ref _finalFailed, value)) OnPropertyChanged(nameof(FinalFailedText)); }
     }
 
     public int FinalConflicts
     {
         get => _finalConflicts;
-        private set => SetProperty(ref _finalConflicts, value);
+        private set { if (SetProperty(ref _finalConflicts, value)) OnPropertyChanged(nameof(FinalConflictsText)); }
     }
 
     public int FinalUnavailable
     {
         get => _finalUnavailable;
-        private set => SetProperty(ref _finalUnavailable, value);
+        private set { if (SetProperty(ref _finalUnavailable, value)) OnPropertyChanged(nameof(FinalUnavailableText)); }
     }
 
     public int FinalSkipped
     {
         get => _finalSkipped;
-        private set => SetProperty(ref _finalSkipped, value);
+        private set { if (SetProperty(ref _finalSkipped, value)) OnPropertyChanged(nameof(FinalSkippedText)); }
     }
 
     public int FinalNotSelected
     {
         get => _finalNotSelected;
-        private set => SetProperty(ref _finalNotSelected, value);
+        private set { if (SetProperty(ref _finalNotSelected, value)) OnPropertyChanged(nameof(FinalNotSelectedText)); }
     }
 
     public string ResultFolder
@@ -550,8 +565,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var includeSubfolders = IncludeSubfolders;
         if (!Directory.Exists(selectedFolder))
         {
-            SourcePathError = "Папка не существует или недоступна.";
-            StateMessage = "Выбранная папка недоступна.";
+            SourcePathError = L("FolderUnavailable");
+            SetState("SelectedFolderUnavailable");
             return;
         }
 
@@ -564,8 +579,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
         SourcePathError = string.Empty;
         IsScanning = true;
-        StateMessage = "Ищем файлы...";
-        EmptyStateMessage = "Ищем файлы...";
+        SetState("Scanning");
+        SetEmptyState("Scanning");
         ClearScanState();
 
         try
@@ -589,7 +604,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
             foreach (var error in scanResult.Errors)
             {
-                AddError($"Не удалось прочитать папку: {Path.GetFileName(error.Path)}.");
+                AddLocalizedError("ScanReadErrorFormat", Path.GetFileName(error.Path));
             }
 
             foreach (var group in scanResult.Files
@@ -603,15 +618,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     _ruleSet.GetRule(group.Key).Target,
                     ChangeRule,
                     group.Key == SourceFormat.Unknown
-                        ? ExtensionBreakdownFormatter.Format(group)
-                        : string.Empty));
+                        ? group.ToArray()
+                        : [],
+                    _localization));
             }
 
             RebuildPreview();
-            EmptyStateMessage = Operations.Count == 0
-                ? "Файлы не найдены. Выберите другую папку или включите подпапки."
-                : string.Empty;
-            StateMessage = $"Найдено файлов: {FoundCount}. Preview готов.";
+            if (Operations.Count == 0) SetEmptyState("NoFiles");
+            else { _emptyResourceKey = null; EmptyStateMessage = string.Empty; }
+            SetState("ScanCompleteFormat", FoundCount);
         }
         finally
         {
@@ -628,7 +643,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var operations = selectedRows.Select(row => row.Operation with
         {
             Status = OperationStatus.Ready,
-            Message = "Готово к обработке."
+            Message = L("OperationReady")
         }).ToArray();
         if (operations.Length == 0)
         {
@@ -638,7 +653,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ValidateOutputPath();
         if (HasOutputPathError)
         {
-            StateMessage = "Проверьте путь результата.";
+            SetState("CheckOutputPath");
             return;
         }
 
@@ -653,7 +668,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IsConverting = true;
         HasFinalReport = false;
         CopyListStatus = string.Empty;
-        FinalReportTitle = "Обработка завершена";
+        _copiedListCount = null;
+        _copyListWasEmpty = false;
+        _finalWasStopped = false;
+        FinalReportTitle = L("FinalComplete");
         ResetFinalCounters();
         _progressCompleted = 0;
         _progressTotal = operations.Length;
@@ -662,7 +680,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         CurrentFile = string.Empty;
         StartConversionTiming();
         _progressTimer.Start();
-        StateMessage = "Преобразуем файлы...";
+        SetState("ConvertingFiles");
         var progress = new InlineProgress<ConversionProgress>(UpdateProgress);
 
         try
@@ -682,16 +700,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         _conversionCancellation.Token);
                     if (!zipResult.Created)
                     {
-                        AddError(zipResult.ErrorCode == "no_successful_outputs"
-                            ? "ZIP не создан: нет успешно преобразованных файлов."
-                            : "Не удалось безопасно создать ZIP результата.");
+                        AddLocalizedError(zipResult.ErrorCode == "no_successful_outputs"
+                            ? "ZipNoOutputs"
+                            : "ZipCreateFailed");
                     }
                 }
                 catch (Exception exception) when (exception is IOException
                                                    or InvalidDataException
                                                    or UnauthorizedAccessException)
                 {
-                    AddError("Не удалось безопасно создать ZIP результата.");
+                    AddLocalizedError("ZipCreateFailed");
                 }
             }
             var resultsBySource = summary.Results.ToDictionary(
@@ -750,7 +768,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     ? NormalizePathInput(OutputPath)
                     : string.Empty;
             HasFinalReport = true;
-            StateMessage = "Пакетная обработка завершена.";
+            SetState("BatchComplete");
             OnPropertyChanged(nameof(VisibleOperations));
             OnPropertyChanged(nameof(CanOpenResult));
         }
@@ -791,13 +809,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                             partialSummary,
                             CancellationToken.None);
                         if (!zipResult.Created)
-                            AddError("Не удалось безопасно сохранить завершённые результаты в ZIP.");
+                            AddLocalizedError("ZipPartialFailed");
                     }
                     catch (Exception exception) when (exception is IOException
                                                        or InvalidDataException
                                                        or UnauthorizedAccessException)
                     {
-                        AddError("Не удалось безопасно сохранить завершённые результаты в ZIP.");
+                        AddLocalizedError("ZipPartialFailed");
                     }
                 }
 
@@ -806,16 +824,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     : File.Exists(NormalizePathInput(OutputPath))
                         ? NormalizePathInput(OutputPath)
                         : string.Empty;
-                FinalReportTitle = "Остановлено пользователем";
+                _finalWasStopped = true;
+                FinalReportTitle = L("StoppedByUser");
                 HasFinalReport = true;
-                StateMessage = "Остановлено пользователем";
+                SetState("StoppedByUser");
                 UpdatePreviewSummary();
                 OnPropertyChanged(nameof(VisibleOperations));
             }
             else
             {
                 RebuildPreview();
-                StateMessage = "Обработка отменена. Preview обновлён.";
+                SetState("CancelledPreviewUpdated");
                 throw;
             }
         }
@@ -840,7 +859,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return false;
 
         IsStopping = true;
-        StateMessage = "Останавливаем…";
+        SetState("Stopping");
         _conversionCancellation.Cancel();
         return true;
     }
@@ -858,7 +877,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             .ToArray();
         if (lines.Length == 0)
         {
-            CopyListStatus = "Нет выбранных файлов для преобразования";
+            _copiedListCount = null;
+            _copyListWasEmpty = true;
+            CopyListStatus = L("NoSelectedFiles");
             return string.Empty;
         }
 
@@ -871,7 +892,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             Environment.NewLine,
             StringSplitOptions.RemoveEmptyEntries).Length;
         if (count > 0)
-            CopyListStatus = $"Скопировано {count} {GetRussianFileWord(count)}";
+        {
+            _copyListWasEmpty = false;
+            _copiedListCount = count;
+            CopyListStatus = _localization.Format("CopiedFilesFormat", count, _localization.FileWord(count));
+        }
     }
 
     private static string NormalizeCopyPath(string path) =>
@@ -879,10 +904,28 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public void AddError(string message)
     {
-        if (ErrorMessages.Contains(message, StringComparer.Ordinal))
-            return;
+        AddErrorEntry(new LocalizedErrorEntry($"raw:{message}", () => message));
+    }
 
-        ErrorMessages.Add(message);
+    public void AddLocalizedError(string resourceKey, params object[] arguments)
+    {
+        var identity = $"resource:{resourceKey}:{string.Join("|", arguments.Select(value => value?.ToString()))}";
+        AddErrorEntry(new LocalizedErrorEntry(
+            identity,
+            () => _localization.Format(resourceKey, arguments)));
+    }
+
+    public void AddConversionError(ConversionResult result)
+    {
+        var identity = $"operation:{result.Operation.SourcePath}:{result.Diagnostic?.ErrorCode}:{result.Diagnostic?.HResult}";
+        AddErrorEntry(new LocalizedErrorEntry(identity, () => FormatConversionError(result)));
+    }
+
+    private void AddErrorEntry(LocalizedErrorEntry entry)
+    {
+        if (_errorEntries.Any(existing => existing.Identity == entry.Identity)) return;
+        _errorEntries.Add(entry);
+        ErrorMessages.Add(entry.Render());
         OnPropertyChanged(nameof(HasErrors));
     }
 
@@ -939,7 +982,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _ruleSet = _ruleSet.WithRule(sourceFormat, target);
         HasFinalReport = false;
         RebuildPreview();
-        StateMessage = "Правило изменено. Preview обновлён.";
+        SetState("RuleChanged");
     }
 
     private void RebuildPreview()
@@ -967,7 +1010,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     isSelected: operation.Status == OperationStatus.Ready
                         && (!previousSelection.TryGetValue(operation.SourcePath, out var selected)
                             || selected),
-                    selectionChanged: SelectionChanged));
+                    selectionChanged: SelectionChanged,
+                    localization: _localization));
             }
         }
 
@@ -1063,7 +1107,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             _ => true
         };
 
-    private void InvalidateScan(string message)
+    private void InvalidateScan(string messageKey)
     {
         if (IsBusy || _lastScan is null)
         {
@@ -1073,8 +1117,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ClearScanState();
         _lastScan = null;
         _scanRoot = string.Empty;
-        StateMessage = message;
-        EmptyStateMessage = "Выполните сканирование, чтобы построить новый preview.";
+        SetState(messageKey);
+        SetEmptyState("NewPreviewNeeded");
     }
 
     private void ClearScanState()
@@ -1082,6 +1126,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         FormatRules.Clear();
         Operations.Clear();
         ErrorMessages.Clear();
+        _errorEntries.Clear();
         FoundCount = 0;
         ReadyCount = 0;
         SelectedReadyCount = 0;
@@ -1091,6 +1136,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ErrorCount = 0;
         HasFinalReport = false;
         CopyListStatus = string.Empty;
+        _copiedListCount = null;
+        _copyListWasEmpty = false;
         ResetFinalCounters();
         _progressCompleted = 0;
         _progressTotal = 0;
@@ -1117,16 +1164,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var now = _timeProvider.GetTimestamp();
         foreach (var row in Operations)
             row.RefreshExecutionTime(_timeProvider, now);
-        ElapsedTimeText = $"Прошло: {FormatDuration(elapsed)}";
+        ElapsedTimeText = _localization.Format("ElapsedFormat", FormatDuration(elapsed));
         if (_progressTotal <= 0 || _progressCompleted <= 0)
         {
-            RemainingTimeText = "Осталось: рассчитываем…";
+            RemainingTimeText = L("RemainingCalculating");
             return;
         }
 
         if (_progressCompleted >= _progressTotal)
         {
-            RemainingTimeText = "Осталось: 00:00";
+            RemainingTimeText = L("RemainingZero");
             return;
         }
 
@@ -1134,7 +1181,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             0,
             elapsed.Ticks * (double)(_progressTotal - _progressCompleted)
             / _progressCompleted));
-        RemainingTimeText = $"Осталось: ~{FormatDuration(remaining)}";
+        RemainingTimeText = _localization.Format("RemainingFormat", FormatDuration(remaining));
     }
 
     private void StartConversionTiming()
@@ -1152,15 +1199,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         _completedElapsed = GetConversionElapsed();
-        ElapsedTimeText = $"Прошло: {FormatDuration(_completedElapsed.Value)}";
-        FinalDurationText = $"Время выполнения: {FormatDuration(_completedElapsed.Value)}";
+        ElapsedTimeText = _localization.Format("ElapsedFormat", FormatDuration(_completedElapsed.Value));
+        FinalDurationText = _localization.Format("FinalDurationFormat", FormatDuration(_completedElapsed.Value));
     }
 
     private void ClearCompletedConversionTiming()
     {
         _completedElapsed = null;
-        ElapsedTimeText = "Прошло: 00:00";
-        RemainingTimeText = "Осталось: рассчитываем…";
+        ElapsedTimeText = _localization.Format("ElapsedFormat", "00:00");
+        RemainingTimeText = L("RemainingCalculating");
         FinalDurationText = string.Empty;
     }
 
@@ -1175,12 +1222,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             : $"{duration.Minutes:00}:{duration.Seconds:00}";
     }
 
-    private static string FormatConversionError(ConversionResult result)
+    private string FormatConversionError(ConversionResult result)
     {
         var details = new List<string>();
         if (!string.IsNullOrWhiteSpace(result.Diagnostic?.ErrorCode))
         {
-            details.Add($"код: {result.Diagnostic.ErrorCode}");
+            details.Add(_localization.Format("ErrorCodeFormat", result.Diagnostic.ErrorCode));
         }
         if (result.Diagnostic?.HResult is int hResult)
         {
@@ -1190,7 +1237,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var diagnostic = details.Count == 0
             ? string.Empty
             : $" ({string.Join(", ", details)})";
-        return $"{result.Operation.RelativePath}: {result.Message}{diagnostic}";
+        var message = OperationMessageLocalizer.Localize(
+            result.Status,
+            result.Operation.Target,
+            result.Message,
+            result.Diagnostic?.ErrorCode,
+            _localization);
+        return $"{result.Operation.RelativePath}: {message}{diagnostic}";
     }
 
     private void AddFailureErrorsFromRows()
@@ -1201,7 +1254,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                      .OfType<ConversionResult>()
                      .Where(result => result.Status == OperationStatus.Failed))
         {
-            AddError(FormatConversionError(result));
+            AddConversionError(result);
         }
     }
 
@@ -1231,7 +1284,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         FinalUnavailable = Operations.Count(row => row.Operation.Status is
             OperationStatus.EngineUnavailable or OperationStatus.Unsupported);
         FinalSkipped = Operations.Count(row => row.Operation.Status == OperationStatus.Skipped);
-        FinalNotSelected = Operations.Count(row => row.Status == "Не выбрано");
+        FinalNotSelected = Operations.Count(row => row.IsNotSelected);
     }
 
     private ConversionSummary CreateCompletedSummary(
@@ -1260,8 +1313,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanCopyConversionList));
     }
 
-    private string GetOfficeStatus(OfficeApplicationKind application) =>
-        _officeAvailability.Single(item => item.Application == application).StatusText;
+    private string GetOfficeStatus(OfficeApplicationKind application)
+    {
+        var availability = _officeAvailability.Single(item => item.Application == application);
+        return _localization.Format(
+            "OfficeStatusFormat",
+            application.ToShortDisplayName(),
+            L(availability.IsAvailable ? "OfficeAvailable" : "OfficeNotInstalled"));
+    }
 
     private void RefreshDefaultOutputPaths()
     {
@@ -1346,12 +1405,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             ? string.Empty
             : validation.ErrorCode switch
             {
-                "output_equals_source" => "Папка результата не может совпадать с исходной.",
-                "output_is_source_parent" => "Папка результата не может быть родителем исходной.",
-                "output_is_file" => "На месте папки результата существует файл.",
-                "zip_target_conflict" => "ZIP результата уже существует и не будет перезаписан.",
-                "zip_extension_required" => "Путь ZIP должен оканчиваться на .zip.",
-                _ => "Путь результата недоступен или небезопасен."
+                "output_equals_source" => L("OutputEqualsSource"),
+                "output_is_source_parent" => L("OutputIsSourceParent"),
+                "output_is_file" => L("OutputIsFile"),
+                "zip_target_conflict" => L("ZipTargetConflict"),
+                "zip_extension_required" => L("ZipExtensionRequired"),
+                _ => L("UnsafeOutputPath")
             };
     }
 
@@ -1392,7 +1451,88 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         var normalized = NormalizePathInput(SelectedFolder);
         SourcePathError = string.IsNullOrWhiteSpace(normalized) || Directory.Exists(normalized)
             ? string.Empty
-            : "Папка не существует или недоступна.";
+            : L("FolderUnavailable");
+    }
+
+    public void RefreshLocalization()
+    {
+        var selectedFilter = SelectedPreviewFilter.Filter;
+        RebuildLocalizedOptions();
+        _selectedPreviewFilter = PreviewFilters.Single(option => option.Filter == selectedFilter);
+        foreach (var rule in FormatRules) rule.RefreshLocalization();
+        foreach (var row in Operations) row.RefreshLocalization();
+        ValidateOutputPath();
+        UpdateSourcePathError();
+        if (_stateResourceKey is not null)
+            SetProperty(ref _stateMessage, _localization.Format(_stateResourceKey, _stateArguments), nameof(StateMessage));
+        if (_emptyResourceKey is not null)
+            SetProperty(ref _emptyStateMessage, L(_emptyResourceKey), nameof(EmptyStateMessage));
+        if (_copiedListCount is int copiedCount)
+            CopyListStatus = _localization.Format("CopiedFilesFormat", copiedCount, _localization.FileWord(copiedCount));
+        else if (_copyListWasEmpty)
+            CopyListStatus = L("NoSelectedFiles");
+        RelocalizeErrors();
+        FinalReportTitle = L(_finalWasStopped ? "StoppedByUser" : "FinalComplete");
+        if (_completedElapsed.HasValue) FreezeLocalizedTiming();
+        else if (IsConverting) RefreshConversionTiming();
+        else ClearCompletedConversionTiming();
+        foreach (var property in new[]
+                 {
+                     nameof(SelectedPreviewFilter), nameof(OutputModes), nameof(SelectedOutputModeOption),
+                     nameof(OutputModeLabel), nameof(OutputBrowseButtonText), nameof(ResultActionText),
+                     nameof(StopButtonText), nameof(SelectionSummary), nameof(ConvertButtonText),
+                     nameof(ProgressCountText), nameof(ProgressPercentText), nameof(WordOfficeStatus),
+                     nameof(ExcelOfficeStatus), nameof(PowerPointOfficeStatus), nameof(VisibleOperations),
+                     nameof(SelectedFolderDisplay), nameof(CurrentFileText), nameof(FinalConvertedText),
+                     nameof(FinalCopiedText), nameof(FinalFailedText), nameof(FinalConflictsText),
+                     nameof(FinalUnavailableText), nameof(FinalSkippedText), nameof(FinalNotSelectedText)
+                 }) OnPropertyChanged(property);
+    }
+
+    private void RebuildLocalizedOptions()
+    {
+        PreviewFilters.Clear();
+        PreviewFilters.Add(new(PreviewFilter.All, L("FilterAll")));
+        PreviewFilters.Add(new(PreviewFilter.Convert, L("FilterConvert")));
+        PreviewFilters.Add(new(PreviewFilter.Skip, L("FilterSkip")));
+        PreviewFilters.Add(new(PreviewFilter.Unavailable, L("FilterUnavailable")));
+        PreviewFilters.Add(new(PreviewFilter.Conflicts, L("FilterConflicts")));
+        PreviewFilters.Add(new(PreviewFilter.Errors, L("FilterErrors")));
+        OutputModes.Clear();
+        OutputModes.Add(new(OutputMode.Folder, L("OutputFolder")));
+        OutputModes.Add(new(OutputMode.Zip, L("OutputZip")));
+    }
+
+    private void FreezeLocalizedTiming()
+    {
+        var elapsed = _completedElapsed!.Value;
+        ElapsedTimeText = _localization.Format("ElapsedFormat", FormatDuration(elapsed));
+        FinalDurationText = _localization.Format("FinalDurationFormat", FormatDuration(elapsed));
+        RemainingTimeText = L("RemainingZero");
+    }
+
+    private string L(string key) => _localization.Get(key);
+
+    private void RelocalizeErrors()
+    {
+        ErrorMessages.Clear();
+        foreach (var entry in _errorEntries) ErrorMessages.Add(entry.Render());
+        OnPropertyChanged(nameof(HasErrors));
+    }
+
+    public void SetLocalizedState(string key, params object[] arguments) => SetState(key, arguments);
+
+    private void SetState(string key, params object[] arguments)
+    {
+        _stateResourceKey = key;
+        _stateArguments = arguments;
+        SetProperty(ref _stateMessage, _localization.Format(key, arguments), nameof(StateMessage));
+    }
+
+    private void SetEmptyState(string key)
+    {
+        _emptyResourceKey = key;
+        SetProperty(ref _emptyStateMessage, L(key), nameof(EmptyStateMessage));
     }
 
     public static string NormalizePathInput(string? value)
@@ -1427,4 +1567,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         public void Report(T value) => report(value);
     }
+
+    private sealed record LocalizedErrorEntry(string Identity, Func<string> Render);
 }

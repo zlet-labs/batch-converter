@@ -5,15 +5,16 @@ namespace Zlet.FolderConverter.App.ViewModels;
 
 public static class ExtensionBreakdownFormatter
 {
-    private const string NoExtensionLabel = "Без расширения";
-
-    public static string Format(IEnumerable<ScannedFile> files)
+    public static string Format(
+        IEnumerable<ScannedFile> files,
+        Localization.LocalizationService? localization = null)
     {
         ArgumentNullException.ThrowIfNull(files);
+        localization ??= Localization.LocalizationService.Current;
 
         return string.Join(
             " · ",
-            files.Select(file => GetExtensionLabel(file.RelativePath))
+            files.Select(file => GetExtensionLabel(file.RelativePath, localization))
                 .GroupBy(label => label, StringComparer.OrdinalIgnoreCase)
                 .Select(group => new
                 {
@@ -25,20 +26,22 @@ public static class ExtensionBreakdownFormatter
                 .Select(item => $"{item.Label}: {item.Count}"));
     }
 
-    private static string GetExtensionLabel(string relativePath)
+    private static string GetExtensionLabel(
+        string relativePath,
+        Localization.LocalizationService localization)
     {
         try
         {
             var extension = Path.GetExtension(relativePath);
             return string.IsNullOrWhiteSpace(extension)
-                ? NoExtensionLabel
+                ? localization.Get("NoExtension")
                 : extension.TrimStart('.').ToUpperInvariant();
         }
         catch (Exception exception) when (exception is ArgumentException
                                            or NotSupportedException
                                            or PathTooLongException)
         {
-            return NoExtensionLabel;
+            return localization.Get("NoExtension");
         }
     }
 }

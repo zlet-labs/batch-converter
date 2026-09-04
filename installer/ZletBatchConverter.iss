@@ -83,4 +83,16 @@ Name: "{autoprograms}\Zlet Converter"; Filename: "{app}\{#AppExeName}"; WorkingD
 Name: "{autodesktop}\Zlet Converter"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
+; Bootstrap through the application's single settings store. It writes only when no
+; valid saved language exists, so upgrades never overwrite a user's later choice.
+Filename: "{app}\{#AppExeName}"; Parameters: "--bootstrap-language={code:GetInitialAppLanguage}"; WorkingDir: "{app}"; Flags: runhidden waituntilterminated
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,Zlet Converter}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function GetInitialAppLanguage(Param: String): String;
+begin
+  if ActiveLanguage = 'russian' then
+    Result := 'ru-RU'
+  else
+    Result := 'en-US';
+end;

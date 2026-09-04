@@ -1,7 +1,7 @@
 using System.ComponentModel;
-using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
+using Zlet.FolderConverter.App.Localization;
 using Zlet.FolderConverter.Core.Models;
 
 namespace Zlet.FolderConverter.App.ViewModels;
@@ -15,13 +15,15 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
     private TimeSpan? _liveExecutionElapsed;
     private int? _operationPercent;
     private bool _isNotSelected;
+    private readonly LocalizationService _localization;
 
     public OperationRowViewModel(
         PlannedOperation operation,
         ConversionResult? result = null,
         bool? isSelected = null,
         bool isNotSelected = false,
-        Action? selectionChanged = null)
+        Action? selectionChanged = null,
+        LocalizationService? localization = null)
     {
         Operation = result is null
             ? operation
@@ -31,6 +33,7 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         _isNotSelected = isNotSelected;
         Result = result;
         _selectionChanged = selectionChanged;
+        _localization = localization ?? LocalizationService.Current;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -38,6 +41,7 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
     public ConversionResult? Result { get; private set; }
     public bool CanSelect => (Operation.Status is OperationStatus.Ready
         or OperationStatus.Cancelled or OperationStatus.NotProcessed);
+    public bool IsNotSelected => _isNotSelected;
 
     public bool IsSelected
     {
@@ -71,8 +75,8 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         : Operation.RelativePath;
     public string ActionLabel => Operation.Target switch
     {
-        ConversionTarget.Skip => "Не трогать",
-        ConversionTarget.Copy => "Копировать без изменений",
+        ConversionTarget.Skip => _localization.Get("TargetSkip"),
+        ConversionTarget.Copy => _localization.Get("TargetCopy"),
         _ => $"{Operation.SourceFormat.ToDisplayName()} → {Operation.Target.ToDisplayName()}"
     };
     public string TargetPath => Operation.TargetPath;
@@ -81,17 +85,22 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         : !string.IsNullOrWhiteSpace(Operation.ResultRelativePath)
             ? Operation.ResultRelativePath
             : Path.ChangeExtension(Operation.RelativePath, Operation.TargetExtension);
-    public string FileSizeText => FormatFileSize(Operation.SourceSizeBytes);
+    public string FileSizeText => _localization.FormatFileSize(Operation.SourceSizeBytes);
     public string ExecutionTimeText => (_executionElapsed ?? _liveExecutionElapsed) is { } elapsed
-        ? FormatExecutionTime(elapsed)
+        ? _localization.FormatExecutionTime(elapsed)
         : "—";
     public string Status
     {
         get
         {
-            if (_isNotSelected && Operation.Status == OperationStatus.Ready) return "Не выбрано";
-            var text = LocalizeStatus(Operation.Status, Operation.Target, Operation.Message);
-            return _operationPercent.HasValue ? $"{text} · {_operationPercent.Value}%" : text;
+            if (_isNotSelected && Operation.Status == OperationStatus.Ready) return _localization.Get("StatusNotSelected");
+            var text = LocalizeStatus(
+                Operation.Status,
+                Operation.Target,
+                Operation.Message,
+                Result?.Diagnostic?.ErrorCode ?? string.Empty,
+                _localization);
+            return _operationPercent.HasValue ? $"{text} · {_operationPercent.Value.ToString(_localization.Culture)}%" : text;
         }
     }
     public string StatusTone => _isNotSelected ? "Cancelled" : Operation.Status switch
@@ -105,7 +114,12 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         OperationStatus.Cancelled or OperationStatus.NotProcessed => "Cancelled",
         _ => "Neutral"
     };
-    public string Message => Operation.Message;
+    public string Message => OperationMessageLocalizer.Localize(
+        Operation.Status,
+        Operation.Target,
+        Operation.Message,
+        Result?.Diagnostic?.ErrorCode,
+        _localization);
 
     public void BeginExecution(long timestamp, int percent)
     {
@@ -122,7 +136,7 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
             : nextPercent;
         _isSelected = false;
         _isNotSelected = false;
-        Operation = Operation with { Status = OperationStatus.Converting, Message = "Выполняется операция." };
+        Operation = Operation with { Status = OperationStatus.Converting, Message = string.Empty };
         NotifyExecutionChanged();
     }
 
@@ -141,11 +155,11 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
     {
         FreezeExecutionTime(timeProvider, timestamp);
         _operationPercent = null;
+        Operation = Operation with { Status = OperationStatus.Cancelled, Message = string.Empty };
         Result = new ConversionResult(
             Operation,
             OperationStatus.Cancelled,
-            "Отменено пользователем.");
-        Operation = Operation with { Status = OperationStatus.Cancelled, Message = "Отменено пользователем." };
+            string.Empty);
         _isSelected = true;
         NotifyExecutionChanged();
     }
@@ -157,7 +171,7 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         _executionElapsed = null;
         _liveExecutionElapsed = null;
         Result = null;
-        Operation = Operation with { Status = OperationStatus.NotProcessed, Message = "Не обработано." };
+        Operation = Operation with { Status = OperationStatus.NotProcessed, Message = string.Empty };
         _isSelected = true;
         NotifyExecutionChanged();
     }
@@ -185,39 +199,42 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         OperationStatus status,
         ConversionTarget target = ConversionTarget.Skip,
         string message = "",
-        string errorCode = "") => status switch
+        string errorCode = "",
+        LocalizationService? localization = null)
     {
-        OperationStatus.Ready when target == ConversionTarget.Copy => "Готово к копированию",
-        OperationStatus.Ready => "Готово к преобразованию",
-        OperationStatus.Skipped => "Пропущено",
-        OperationStatus.Converting => "В процессе",
-        OperationStatus.Succeeded when target == ConversionTarget.Copy => "Скопировано",
-        OperationStatus.Succeeded => "Преобразовано",
-        OperationStatus.Conflict => "Конфликт",
-        OperationStatus.Failed when !string.IsNullOrWhiteSpace(message) => $"Ошибка: {message}",
-        OperationStatus.Failed => "Ошибка",
-        OperationStatus.EngineUnavailable or OperationStatus.Unsupported
-            when !string.IsNullOrWhiteSpace(message) => $"Недоступно: {message}",
-        OperationStatus.EngineUnavailable or OperationStatus.Unsupported => "Недоступно",
-        OperationStatus.Cancelled => "Отменено",
-        OperationStatus.NotProcessed => "Не обработано",
-        _ => "Неизвестно"
-    };
+        localization ??= LocalizationService.Current;
+        return status switch
+        {
+            OperationStatus.Ready when target == ConversionTarget.Copy => localization.Get("StatusReadyCopy"),
+            OperationStatus.Ready => localization.Get("StatusReadyConvert"),
+            OperationStatus.Skipped => localization.Get("StatusSkipped"),
+            OperationStatus.Converting => localization.Get("StatusConverting"),
+            OperationStatus.Succeeded when target == ConversionTarget.Copy => localization.Get("StatusCopied"),
+            OperationStatus.Succeeded => localization.Get("StatusConverted"),
+            OperationStatus.Conflict => localization.Get("StatusConflict"),
+            OperationStatus.Failed when !string.IsNullOrWhiteSpace(message) || !string.IsNullOrWhiteSpace(errorCode) => localization.Format(
+                "StatusFailedDetail",
+                OperationMessageLocalizer.Localize(status, target, message, errorCode, localization)),
+            OperationStatus.Failed => localization.Get("StatusFailed"),
+            OperationStatus.EngineUnavailable or OperationStatus.Unsupported
+                when !string.IsNullOrWhiteSpace(message) || !string.IsNullOrWhiteSpace(errorCode) => localization.Format(
+                    "StatusUnavailableDetail",
+                    OperationMessageLocalizer.Localize(status, target, message, errorCode, localization)),
+            OperationStatus.EngineUnavailable or OperationStatus.Unsupported => localization.Get("StatusUnavailable"),
+            OperationStatus.Cancelled => localization.Get("StatusCancelled"),
+            OperationStatus.NotProcessed => localization.Get("StatusNotProcessed"),
+            _ => localization.Get("StatusUnknown")
+        };
+    }
 
     public static string FormatFileSize(long bytes)
     {
-        if (bytes <= 0) return "0 МБ";
-        var megabytes = bytes / 1024d / 1024d;
-        var format = megabytes < 10 ? "0.##" : megabytes < 100 ? "0.#" : "0";
-        return $"{megabytes.ToString(format, CultureInfo.GetCultureInfo("ru-RU"))} МБ";
+        return LocalizationService.Current.FormatFileSize(bytes);
     }
 
     public static string FormatExecutionTime(TimeSpan elapsed)
     {
-        var seconds = Math.Max(0, elapsed.TotalSeconds);
-        if (seconds >= 60) return $"{(int)seconds / 60}:{(int)seconds % 60:00}";
-        var format = seconds < 10 ? "0.#" : "0";
-        return $"{seconds.ToString(format, CultureInfo.GetCultureInfo("ru-RU"))} с";
+        return LocalizationService.Current.FormatExecutionTime(elapsed);
     }
 
     private void FreezeExecutionTime(TimeProvider timeProvider, long timestamp)
@@ -236,6 +253,17 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(StatusTone));
         OnPropertyChanged(nameof(Message));
         OnPropertyChanged(nameof(ExecutionTimeText));
+    }
+
+    public void RefreshLocalization() => OnLanguageChanged(this, EventArgs.Empty);
+
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(ActionLabel));
+        OnPropertyChanged(nameof(FileSizeText));
+        OnPropertyChanged(nameof(ExecutionTimeText));
+        OnPropertyChanged(nameof(Status));
+        OnPropertyChanged(nameof(Message));
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>

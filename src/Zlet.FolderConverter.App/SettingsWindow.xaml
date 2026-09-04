@@ -1,0 +1,49 @@
+<Window x:Class="Zlet.FolderConverter.App.SettingsWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="{DynamicResource SettingsTitle}" Width="540" Height="680" MinWidth="340" MinHeight="300"
+ WindowStartupLocation="CenterOwner" Background="#0D1728" Foreground="#F2F6FF">
+ <Window.Resources>
+  <ResourceDictionary>
+   <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="Resources/AppStyles.xaml"/>
+   </ResourceDictionary.MergedDictionaries>
+  <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Margin" Value="0,4"/></Style>
+  <Style TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}"><Setter Property="Margin" Value="0,6,8,0"/><Setter Property="HorizontalAlignment" Value="Left"/></Style>
+  <Style x:Key="Section" TargetType="TextBlock"><Setter Property="FontSize" Value="18"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,22,0,8"/></Style>
+  </ResourceDictionary>
+ </Window.Resources>
+ <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+  <StackPanel Margin="24,0,24,24">
+   <TextBlock Text="{DynamicResource SettingsGeneral}" Style="{StaticResource Section}"/>
+   <TextBlock Text="{DynamicResource LanguageLabel}"/>
+   <RadioButton x:Name="RussianButton" Content="{DynamicResource LanguageRussian}" Margin="0,7" Checked="Language_Checked" Tag="ru-RU"/>
+   <RadioButton x:Name="EnglishButton" Content="{DynamicResource LanguageEnglish}" Margin="0,7" Checked="Language_Checked" Tag="en-US"/>
+   <TextBlock x:Name="SaveErrorText" Text="{DynamicResource SettingsSaveFailed}" Foreground="#FF9AAA" Visibility="Collapsed"/>
+   <Button Content="{DynamicResource ResetSettings}" Click="Reset_Click"/>
+   <TextBlock x:Name="ResetStatus"/>
+   <TextBlock Text="{DynamicResource SettingsUpdates}" Style="{StaticResource Section}"/>
+   <TextBlock x:Name="VersionText"/>
+   <TextBlock Text="{DynamicResource UpdateDisclosure}"/>
+   <Button x:Name="CheckButton" Content="{DynamicResource CheckUpdates}" Click="Check_Click"/>
+   <TextBlock x:Name="UpdateStatus" AutomationProperties.LiveSetting="Polite"/>
+   <Button x:Name="ReleaseButton" Content="{DynamicResource OpenRelease}" Click="Release_Click" Visibility="Collapsed"/>
+   <TextBlock Text="{DynamicResource SettingsDiagnostics}" Style="{StaticResource Section}"/>
+   <TextBlock x:Name="DiagnosticsBlock"/>
+   <Button Content="{DynamicResource CopyDiagnostics}" Click="Copy_Click"/>
+   <TextBlock x:Name="CopyStatus"/>
+   <TextBlock Text="{DynamicResource SettingsAbout}" Style="{StaticResource Section}"/>
+   <TextBlock x:Name="ProductText" FontWeight="SemiBold"/>
+   <TextBlock Text="{DynamicResource AboutPublisher}"/>
+   <TextBlock Text="{DynamicResource AboutPrivacy}"/>
+   <WrapPanel>
+    <Button Content="{DynamicResource AboutProduct}" Tag="https://zlet.app/batch-converter/" Click="Link_Click"/>
+    <Button Content="{DynamicResource AboutRepository}" Tag="https://github.com/zlet-labs/zlet-converter" Click="Link_Click"/>
+    <Button Content="{DynamicResource AboutReleases}" Tag="https://github.com/zlet-labs/zlet-converter/releases" Click="Link_Click"/>
+    <Button Content="{DynamicResource AboutIssue}" Tag="https://github.com/zlet-labs/zlet-converter/issues" Click="Link_Click"/>
+    <Button Content="{DynamicResource AboutLicense}" Tag="https://github.com/zlet-labs/zlet-converter/blob/main/LICENSE" Click="Link_Click"/>
+   </WrapPanel>
+   <TextBlock x:Name="BrowserStatus"/>
+  </StackPanel>
+ </ScrollViewer>
+</Window>

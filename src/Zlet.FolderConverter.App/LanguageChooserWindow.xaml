@@ -1,0 +1,18 @@
+<Window x:Class="Zlet.FolderConverter.App.LanguageChooserWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Zlet Converter" Width="360" Height="210"
+        ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
+        Background="#0D1728" Foreground="#F2F6FF">
+    <Grid Margin="28">
+        <Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="Выберите язык / Choose language" FontSize="19" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+            <TextBlock Text="Язык можно изменить позже / You can change it later" Margin="0,10,0,0" Opacity="0.72" HorizontalAlignment="Center"/>
+        </StackPanel>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center">
+            <Button x:Name="RussianButton" Content="Русский" Width="125" Height="40" Margin="0,0,10,0" Click="ChooseRussian_Click"/>
+            <Button x:Name="EnglishButton" Content="English" Width="125" Height="40" Click="ChooseEnglish_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,12 +1,15 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Zlet.FolderConverter.Core.Models;
+using Zlet.FolderConverter.App.Localization;
 
 namespace Zlet.FolderConverter.App.ViewModels;
 
 public sealed class RuleRowViewModel : INotifyPropertyChanged
 {
     private readonly Action<SourceFormat, ConversionTarget> _selectionChanged;
+    private readonly IReadOnlyList<ScannedFile> _extensionFiles;
+    private readonly LocalizationService _localization;
     private ConversionTargetOption _selectedTarget;
 
     public RuleRowViewModel(
@@ -14,14 +17,20 @@ public sealed class RuleRowViewModel : INotifyPropertyChanged
         int count,
         ConversionTarget selectedTarget,
         Action<SourceFormat, ConversionTarget> selectionChanged,
-        string extensionBreakdown = "")
+        IReadOnlyList<ScannedFile>? extensionFiles = null,
+        LocalizationService? localization = null)
     {
         SourceFormat = capability.SourceFormat;
-        FormatLabel = capability.DisplayName;
         Count = count;
-        ExtensionBreakdown = extensionBreakdown;
+        _extensionFiles = extensionFiles ?? [];
+        _localization = localization ?? LocalizationService.Current;
         Targets = capability.AllowedTargets
-            .Select(target => new ConversionTargetOption(target, target.ToDisplayName()))
+            .Select(target => new ConversionTargetOption(target, target switch
+            {
+                ConversionTarget.Skip => _localization.Get("TargetSkip"),
+                ConversionTarget.Copy => _localization.Get("TargetCopy"),
+                _ => target.ToDisplayName()
+            }))
             .ToArray();
         _selectedTarget = Targets.Single(option => option.Target == selectedTarget);
         _selectionChanged = selectionChanged;
@@ -30,11 +39,17 @@ public sealed class RuleRowViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public SourceFormat SourceFormat { get; }
-    public string FormatLabel { get; }
+    public string FormatLabel => SourceFormat switch
+    {
+        SourceFormat.Image => _localization.Get("FormatImage"),
+        SourceFormat.Archive => _localization.Get("FormatArchive"),
+        SourceFormat.Unknown => _localization.Get("FormatUnknown"),
+        _ => SourceFormat.ToDisplayName()
+    };
     public int Count { get; }
-    public string ExtensionBreakdown { get; }
+    public string ExtensionBreakdown => ExtensionBreakdownFormatter.Format(_extensionFiles, _localization);
     public bool HasExtensionBreakdown => !string.IsNullOrWhiteSpace(ExtensionBreakdown);
-    public IReadOnlyList<ConversionTargetOption> Targets { get; }
+    public IReadOnlyList<ConversionTargetOption> Targets { get; private set; }
 
     public ConversionTargetOption SelectedTarget
     {
@@ -50,6 +65,25 @@ public sealed class RuleRowViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             _selectionChanged(SourceFormat, value.Target);
         }
+    }
+
+    public void RefreshLocalization()
+    {
+        var selected = _selectedTarget.Target;
+        Targets = Targets.Select(option => new ConversionTargetOption(
+            option.Target,
+            option.Target switch
+            {
+                ConversionTarget.Skip => _localization.Get("TargetSkip"),
+                ConversionTarget.Copy => _localization.Get("TargetCopy"),
+                _ => option.Target.ToDisplayName()
+            })).ToArray();
+        _selectedTarget = Targets.Single(option => option.Target == selected);
+        OnPropertyChanged(nameof(Targets));
+        OnPropertyChanged(nameof(SelectedTarget));
+        OnPropertyChanged(nameof(FormatLabel));
+        OnPropertyChanged(nameof(ExtensionBreakdown));
+        OnPropertyChanged(nameof(HasExtensionBreakdown));
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>

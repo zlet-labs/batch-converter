@@ -3,6 +3,8 @@ using System.IO.Compression;
 using System.Text;
 using Zlet.FolderConverter.App.ViewModels;
 using Zlet.FolderConverter.Core.Models;
+using Zlet.FolderConverter.Core.Services;
+using Zlet.FolderConverter.App.Localization;
 
 namespace Zlet.FolderConverter.App;
 
@@ -24,11 +26,11 @@ public static class ConversionReportWriter
                 var root = MainWindowViewModel.NormalizePathInput(viewModel.OutputPath);
                 Directory.CreateDirectory(root);
                 var path = GetAvailableReportPath(root);
-                await File.WriteAllTextAsync(
-                    path,
-                    report,
-                    new UTF8Encoding(false),
-                    cancellationToken);
+                if (!OutputPathGuard.IsSafeTargetPath(path, root)) throw new IOException();
+                await using var reportStream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                await using var reportWriter = new StreamWriter(reportStream, new UTF8Encoding(false));
+                await reportWriter.WriteAsync(report.AsMemory(), cancellationToken);
+                viewModel.SetReportStatus(true);
                 return;
             }
 
@@ -39,16 +41,10 @@ public static class ConversionReportWriter
                 throw new InvalidDataException("ZIP output directory is missing.");
             }
             Directory.CreateDirectory(directory);
-            var mode = File.Exists(zipPath) ? ZipArchiveMode.Update : ZipArchiveMode.Create;
-            using var archive = ZipFile.Open(zipPath, mode);
-            var entryName = GetAvailableEntryName(archive);
-            var entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
-            await using var stream = entry.Open();
-            await using var writer = new StreamWriter(
-                stream,
-                new UTF8Encoding(false),
-                leaveOpen: false);
-            await writer.WriteAsync(report.AsMemory(), cancellationToken);
+            if (!OutputPathGuard.IsSafeTargetPath(zipPath, directory)) throw new IOException();
+            if (File.Exists(zipPath) && !viewModel.ZipPublishedByThisRun) throw new IOException();
+            await WriteZipReportAsync(zipPath, report, viewModel.ZipPublishedByThisRun, cancellationToken);
+            viewModel.SetReportStatus(true);
         }
         catch (OperationCanceledException)
         {
@@ -59,7 +55,8 @@ public static class ConversionReportWriter
                                            or InvalidDataException
                                            or ArgumentException)
         {
-            viewModel.AddError("Не удалось создать текстовый отчёт о пакетной обработке.");
+            viewModel.SetReportStatus(false);
+            viewModel.AddLocalizedError("ReportFailed");
         }
     }
 
@@ -68,6 +65,7 @@ public static class ConversionReportWriter
         DateTimeOffset started,
         DateTimeOffset finished)
     {
+        var l = viewModel.Localization;
         var operations = viewModel.Operations.ToArray();
         var sourceCount = operations
             .Select(row => row.Operation.SourcePath)
@@ -76,73 +74,69 @@ public static class ConversionReportWriter
         var duration = finished >= started ? finished - started : TimeSpan.Zero;
         var builder = new StringBuilder();
         builder.AppendLine($"{ProductIdentity.Name} v{ProductIdentity.Version}");
-        builder.AppendLine("Conversion report");
-        builder.AppendLine($"Started: {started.LocalDateTime:yyyy-MM-dd HH:mm:ss}");
-        builder.AppendLine($"Finished: {finished.LocalDateTime:yyyy-MM-dd HH:mm:ss}");
-        builder.AppendLine($"Duration: {FormatDuration(duration)}");
-        builder.AppendLine($"Batch outcome: {NormalizeBatchOutcome(viewModel.FinalReportTitle)}");
+        builder.AppendLine(l.Get("ReportTitle"));
+        builder.AppendLine($"{l.Get("ReportStarted")}: {started.LocalDateTime:yyyy-MM-dd HH:mm:ss}");
+        builder.AppendLine($"{l.Get("ReportFinished")}: {finished.LocalDateTime:yyyy-MM-dd HH:mm:ss}");
+        builder.AppendLine($"{l.Get("ReportDuration")}: {FormatDuration(duration)}");
+        builder.AppendLine($"{l.Get("ReportOutcome")}: {l.Get(viewModel.WasStoppedByUser ? "ReportOutcomeStopped"
+            : viewModel.FinalFailed + viewModel.FinalConflicts + viewModel.FinalUnavailable > 0 ? "ReportOutcomePartial" : "FinalComplete")}");
         builder.AppendLine();
-        builder.AppendLine("SUMMARY");
+        builder.AppendLine(l.Get("ReportSummary"));
         builder.AppendLine();
-        builder.AppendLine($"Source files: {sourceCount}");
-        builder.AppendLine($"Converted: {viewModel.FinalConverted}");
-        builder.AppendLine($"Copied: {viewModel.FinalCopied}");
-        builder.AppendLine($"Skipped: {viewModel.FinalSkipped}");
-        builder.AppendLine($"Not selected: {viewModel.FinalNotSelected}");
-        builder.AppendLine($"Unavailable: {viewModel.FinalUnavailable}");
-        builder.AppendLine($"Conflicts: {viewModel.FinalConflicts}");
-        builder.AppendLine($"Failed: {viewModel.FinalFailed}");
+        builder.AppendLine($"{l.Get("ReportSources")}: {sourceCount}");
+        builder.AppendLine($"{l.Get("ReportConverted")}: {viewModel.FinalConverted}");
+        builder.AppendLine($"{l.Get("ReportCopied")}: {viewModel.FinalCopied}");
+        builder.AppendLine($"{l.Get("ReportSkipped")}: {viewModel.FinalSkipped}");
+        builder.AppendLine($"{l.Get("ReportNotSelected")}: {viewModel.FinalNotSelected}");
+        builder.AppendLine($"{l.Get("ReportUnavailable")}: {viewModel.FinalUnavailable}");
+        builder.AppendLine($"{l.Get("ReportConflicts")}: {viewModel.FinalConflicts}");
+        builder.AppendLine($"{l.Get("ReportFailedCount")}: {viewModel.FinalFailed}");
 
         var worksheetRows = operations
-            .Where(row => row.Operation.IsWorksheetOperation)
+            .Where(row => row.Operation.IsWorksheetExport)
             .ToArray();
         if (worksheetRows.Length > 0)
         {
             builder.AppendLine();
-            builder.AppendLine("EXCEL");
+            builder.AppendLine(l.Get("ReportExcel"));
             builder.AppendLine();
-            AppendWorksheetAggregate(builder, worksheetRows);
+            AppendWorksheetAggregate(builder, worksheetRows, l);
             foreach (var workbook in worksheetRows
                          .GroupBy(row => row.Operation.SourcePath, StringComparer.OrdinalIgnoreCase)
                          .OrderBy(group => group.First().Operation.RelativePath, StringComparer.OrdinalIgnoreCase))
             {
                 builder.AppendLine();
-                builder.AppendLine(workbook.First().Operation.RelativePath);
-                AppendWorksheetAggregate(builder, workbook.ToArray(), perWorkbook: true);
+                builder.AppendLine(SafeRelativePath(workbook.First().Operation.RelativePath));
+                AppendWorksheetAggregate(builder, workbook.ToArray(), l, perWorkbook: true);
             }
         }
 
         builder.AppendLine();
-        builder.AppendLine("DETAILS");
+        builder.AppendLine(l.Get("ReportDetails"));
         builder.AppendLine();
         foreach (var row in operations)
         {
             builder.AppendLine($"[{ToReportStatus(row)}]");
             builder.AppendLine(row.Operation.IsWorksheetOperation
-                ? $"{row.Operation.RelativePath} / {row.Operation.WorksheetName}"
-                : row.Operation.RelativePath);
+                ? $"{SafeRelativePath(row.Operation.RelativePath)} / {SafeRelativePath(row.Operation.WorksheetName)}"
+                : SafeRelativePath(row.Operation.RelativePath));
             builder.AppendLine(row.ActionLabel);
             if (!string.IsNullOrWhiteSpace(row.ResultPath) && row.ResultPath != "—")
             {
-                builder.AppendLine($"Result: {NormalizeRelativePath(row.ResultPath)}");
+                builder.AppendLine($"{l.Get("ReportResult")}: {SafeRelativePath(row.ResultPath)}");
             }
-            if (!string.IsNullOrWhiteSpace(row.Message)
-                && row.Operation.Status is not OperationStatus.Succeeded)
+            builder.AppendLine($"{l.Get("ReportReason")}: {OperationMessageLocalizer.ForReport(
+                row.Operation, row.Result?.Diagnostic?.ErrorCode, l)}");
+            if (row.Result?.Diagnostic?.ErrorCode is { Length: > 0 } errorCode
+                && OperationMessageLocalizer.IsKnownErrorCode(errorCode))
             {
-                builder.AppendLine($"Reason: {row.Message}");
-            }
-            if (row.Result?.Diagnostic?.ErrorCode is { Length: > 0 } errorCode)
-            {
-                builder.AppendLine($"Error code: {errorCode}");
+                builder.AppendLine($"{l.Get("ReportErrorCode")}: {errorCode}");
             }
             if (row.Result?.Diagnostic?.HResult is int hResult)
             {
                 builder.AppendLine($"HRESULT: 0x{unchecked((uint)hResult):X8}");
             }
-            if (row.ExecutionTimeText != "—")
-            {
-                builder.AppendLine($"Time: {row.ExecutionTimeText}");
-            }
+            builder.AppendLine($"{l.Get("ReportTime")}: {row.ExecutionTimeText}");
             builder.AppendLine();
         }
 
@@ -152,6 +146,7 @@ public static class ConversionReportWriter
     private static void AppendWorksheetAggregate(
         StringBuilder builder,
         IReadOnlyList<OperationRowViewModel> rows,
+        LocalizationService l,
         bool perWorkbook = false)
     {
         var selected = rows.Count(IsSelectedForRun);
@@ -164,7 +159,8 @@ public static class ConversionReportWriter
         var hiddenSkipped = rows.Count(row =>
             row.Operation.WorksheetVisibility != WorksheetVisibility.Visible
             && !IsSelectedForRun(row));
-        var emptySkipped = rows.Count(row => row.Operation.WorksheetIsEmpty);
+        var emptySkipped = rows.Count(row => row.Operation.IsWorksheetOperation && row.Operation.WorksheetIsEmpty);
+        var sheetsFound = rows.Count(row => row.Operation.IsWorksheetOperation);
         var failed = rows.Count(row => row.Operation.Status == OperationStatus.Failed);
         if (!perWorkbook)
         {
@@ -172,24 +168,24 @@ public static class ConversionReportWriter
                 .Select(row => row.Operation.SourcePath)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Count();
-            builder.AppendLine($"Workbooks processed: {workbooks}");
-            builder.AppendLine($"Worksheets found: {rows.Count}");
-            builder.AppendLine($"Worksheets selected: {selected}");
-            builder.AppendLine($"CSV exported: {csvExported}");
-            builder.AppendLine($"TSV exported: {tsvExported}");
-            builder.AppendLine($"Hidden skipped: {hiddenSkipped}");
-            builder.AppendLine($"Empty skipped: {emptySkipped}");
-            builder.AppendLine($"Failed: {failed}");
+            builder.AppendLine($"{l.Get("ReportWorkbooksProcessed")}: {workbooks}");
+            builder.AppendLine($"{l.Get("ReportWorksheetsFound")}: {sheetsFound}");
+            builder.AppendLine($"{l.Get("ReportWorksheetsSelected")}: {selected}");
+            builder.AppendLine($"{l.Get("ReportCsvExported")}: {csvExported}");
+            builder.AppendLine($"{l.Get("ReportTsvExported")}: {tsvExported}");
+            builder.AppendLine($"{l.Get("ReportHiddenSkipped")}: {hiddenSkipped}");
+            builder.AppendLine($"{l.Get("ReportEmptySkipped")}: {emptySkipped}");
+            builder.AppendLine($"{l.Get("ReportFailedCount")}: {failed}");
             return;
         }
 
-        builder.AppendLine($"Sheets found: {rows.Count}");
-        builder.AppendLine($"Selected: {selected}");
-        builder.AppendLine($"CSV exported: {csvExported}");
-        builder.AppendLine($"TSV exported: {tsvExported}");
-        builder.AppendLine($"Hidden skipped: {hiddenSkipped}");
-        builder.AppendLine($"Empty skipped: {emptySkipped}");
-        builder.AppendLine($"Failed: {failed}");
+        builder.AppendLine($"{l.Get("ReportSheetsFound")}: {sheetsFound}");
+        builder.AppendLine($"{l.Get("ReportSelected")}: {selected}");
+        builder.AppendLine($"{l.Get("ReportCsvExported")}: {csvExported}");
+        builder.AppendLine($"{l.Get("ReportTsvExported")}: {tsvExported}");
+        builder.AppendLine($"{l.Get("ReportHiddenSkipped")}: {hiddenSkipped}");
+        builder.AppendLine($"{l.Get("ReportEmptySkipped")}: {emptySkipped}");
+        builder.AppendLine($"{l.Get("ReportFailedCount")}: {failed}");
     }
 
     private static bool IsSelectedForRun(OperationRowViewModel row) =>
@@ -201,7 +197,7 @@ public static class ConversionReportWriter
 
     private static string ToReportStatus(OperationRowViewModel row)
     {
-        if (row.Status == "Не выбрано")
+        if (row.IsNotSelected)
         {
             return "NOT SELECTED";
         }
@@ -221,13 +217,44 @@ public static class ConversionReportWriter
         };
     }
 
-    private static string NormalizeBatchOutcome(string value) =>
-        value.Contains("Остановлено пользователем", StringComparison.OrdinalIgnoreCase)
-            ? "Batch stopped by user"
-            : value;
+    private static string SafeRelativePath(string path)
+    {
+        var normalized = path.Replace('\\', '/');
+        return Path.IsPathRooted(path) || normalized.Contains(':') || normalized.Split('/').Contains("..")
+            || normalized.Any(char.IsControl) ? "[redacted]" : normalized;
+    }
 
-    private static string NormalizeRelativePath(string path) =>
-        path.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
+    private static async Task WriteZipReportAsync(string zipPath, string report, bool ownsArchive, CancellationToken token)
+    {
+        var temporary = Path.Combine(Path.GetDirectoryName(zipPath)!, $".zlet-report-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            // Build the amended archive separately: a report failure must not damage completed outputs.
+            await using (var destination = new FileStream(temporary, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+            {
+                if (ownsArchive)
+                {
+                    await using var original = new FileStream(zipPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    await original.CopyToAsync(destination, token);
+                    destination.Position = 0;
+                }
+                using var archive = new ZipArchive(destination, ownsArchive ? ZipArchiveMode.Update : ZipArchiveMode.Create);
+                var name = ownsArchive ? GetAvailableEntryName(archive) : BaseReportName;
+                var entry = archive.CreateEntry(name, CompressionLevel.Optimal);
+                await using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
+                await writer.WriteAsync(report.AsMemory(), token);
+            }
+            token.ThrowIfCancellationRequested();
+            if (ownsArchive) File.Replace(temporary, zipPath, null);
+            else File.Move(temporary, zipPath, overwrite: false);
+        }
+        finally
+        {
+            try { File.Delete(temporary); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
 
     private static string FormatDuration(TimeSpan duration)
     {

@@ -35,7 +35,7 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
                     readyTotal,
                     operation.RelativePath,
                     OperationStatus.Converting,
-                    OperationPercent: 10));
+                    OperationPercent: 10, WorksheetName: operation.WorksheetName));
                 var operationPercent = 10;
 
                 ConversionResult result;
@@ -65,7 +65,7 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
                                 readyTotal,
                                 operation.RelativePath,
                                 OperationStatus.Converting,
-                                OperationPercent: operationPercent));
+                                OperationPercent: operationPercent, WorksheetName: operation.WorksheetName));
                         });
                         result = await adapter.ConvertAsync(
                             operation,
@@ -84,7 +84,7 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
                             operation.RelativePath,
                             OperationStatus.Cancelled,
                             cancelled,
-                            operationPercent));
+                            operationPercent, operation.WorksheetName));
                         throw;
                     }
                     catch
@@ -105,7 +105,7 @@ public sealed class ConversionProcessor(IConversionAdapterResolver adapterResolv
                     operation.RelativePath,
                     result.Status,
                     result,
-                    result.Status == OperationStatus.Succeeded ? 100 : operationPercent));
+                    result.Status == OperationStatus.Succeeded ? 100 : operationPercent, operation.WorksheetName));
             }
         }
         finally

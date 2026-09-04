@@ -4,9 +4,35 @@ namespace Zlet.FolderConverter.App.Localization;
 
 public static class OperationMessageLocalizer
 {
+    public static bool IsKnownErrorCode(string code) => ErrorCodeKeys.ContainsKey(code);
+
+    public static string ForReport(PlannedOperation operation, string? errorCode, LocalizationService localization)
+    {
+        if (KnownMessageKeys.TryGetValue(operation.Message, out var key)
+            || ErrorCodeKeys.TryGetValue(operation.Message, out key)) return localization.Get(key);
+        if (errorCode is not null && ErrorCodeKeys.TryGetValue(errorCode, out key)) return localization.Get(key);
+        return localization.Get(operation.Status switch
+        {
+            OperationStatus.Failed => "OperationProcessingFailed",
+            OperationStatus.Conflict => "OperationTargetExists",
+            OperationStatus.Unsupported => "OperationUnsupported",
+            OperationStatus.EngineUnavailable => "OperationUnavailable",
+            OperationStatus.Skipped => "OperationSkipped",
+            OperationStatus.Cancelled => "OperationCancelled",
+            OperationStatus.NotProcessed => "OperationNotProcessed",
+            OperationStatus.Succeeded when operation.Target == ConversionTarget.Copy => "StatusCopied",
+            OperationStatus.Succeeded => "StatusConverted",
+            _ => "StatusNotSelected"
+        });
+    }
     private static readonly IReadOnlyDictionary<string, string> ErrorCodeKeys =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["worksheet_inspection_failure"] = "WorksheetInspectionFailed",
+            ["worksheet_none"] = "WorksheetNone",
+            ["worksheet_empty"] = "WorksheetEmpty",
+            ["worksheet_hidden"] = "WorksheetHidden",
+            ["excel_sheet_operation_failure"] = "OperationOfficeFailure",
             ["unsafe_source"] = "OperationUnsafeSource",
             ["unsafe_target"] = "OperationInvalidTarget",
             ["target_directory_missing"] = "OperationInvalidTarget",
@@ -73,6 +99,7 @@ public static class OperationMessageLocalizer
         LocalizationService? localization = null)
     {
         localization ??= LocalizationService.Current;
+        if (message is not null && ErrorCodeKeys.TryGetValue(message, out var codeKey)) return localization.Get(codeKey);
         if (!string.IsNullOrWhiteSpace(message) && KnownMessageKeys.TryGetValue(message, out var messageKey))
             return localization.Get(messageKey);
         if (!string.IsNullOrWhiteSpace(errorCode) && ErrorCodeKeys.TryGetValue(errorCode, out var errorKey))

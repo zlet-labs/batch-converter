@@ -29,6 +29,8 @@ public sealed class RuleRowViewModel : INotifyPropertyChanged
             {
                 ConversionTarget.Skip => _localization.Get("TargetSkip"),
                 ConversionTarget.Copy => _localization.Get("TargetCopy"),
+                ConversionTarget.Csv => _localization.Get("TargetCsvSheets"),
+                ConversionTarget.Tsv => _localization.Get("TargetTsvSheets"),
                 _ => target.ToDisplayName()
             }))
             .ToArray();
@@ -76,6 +78,8 @@ public sealed class RuleRowViewModel : INotifyPropertyChanged
             {
                 ConversionTarget.Skip => _localization.Get("TargetSkip"),
                 ConversionTarget.Copy => _localization.Get("TargetCopy"),
+                ConversionTarget.Csv => _localization.Get("TargetCsvSheets"),
+                ConversionTarget.Tsv => _localization.Get("TargetTsvSheets"),
                 _ => option.Target.ToDisplayName()
             })).ToArray();
         _selectedTarget = Targets.Single(option => option.Target == selected);

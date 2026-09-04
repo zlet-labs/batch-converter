@@ -93,13 +93,18 @@ public sealed class OperationRowViewModel : INotifyPropertyChanged
     {
         get
         {
-            if (_isNotSelected && Operation.Status == OperationStatus.Ready) return _localization.Get("StatusNotSelected");
-            var text = LocalizeStatus(
+            var text = _isNotSelected && Operation.Status == OperationStatus.Ready ? _localization.Get("StatusNotSelected") : LocalizeStatus(
                 Operation.Status,
                 Operation.Target,
                 Operation.Message,
                 Result?.Diagnostic?.ErrorCode ?? string.Empty,
                 _localization);
+            if (Operation.IsWorksheetOperation)
+            {
+                if (Operation.WorksheetIsEmpty) text += " · " + _localization.Get("EmptyLabel");
+                if (Operation.WorksheetVisibility != WorksheetVisibility.Visible) text += " · " + _localization.Get(
+                    Operation.WorksheetVisibility == WorksheetVisibility.VeryHidden ? "VeryHiddenLabel" : "HiddenLabel");
+            }
             return _operationPercent.HasValue ? $"{text} · {_operationPercent.Value.ToString(_localization.Culture)}%" : text;
         }
     }

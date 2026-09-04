@@ -44,7 +44,7 @@ The application UI supports Russian and English in the same package. On first la
 
 Preparing document collections for **Gemini Notebook** is one practical use case for Zlet Converter. The current development branch expands local preparation beyond legacy Office conversion: Excel workbooks can be exported to one UTF-8 CSV per worksheet, and already-compatible PDFs, CSV files, EPUBs and supported image files can be safely copied unchanged.
 
-Google currently lists DOCX, PPTX, TXT, Markdown, PDF, CSV, EPUB and multiple image formats among Gemini Notebook source types. XLS/XLSX and TSV are not listed as direct upload formats, so TSV support in Zlet Converter is a general-purpose tabular export option rather than a Gemini Notebook compatibility claim.
+Zlet Converter remains a general-purpose local conversion and file preparation tool. Check the destination service's current format requirements before using the results; CSV/TSV exports do not imply integration or guaranteed acceptance by Gemini Notebook.
 
 Gemini Notebook source support: [Google Help](https://support.google.com/gemininotebook/answer/16215270?co=GENIE.Platform%3DDesktop&hl=en)
 
@@ -81,6 +81,10 @@ These capabilities are **not yet part of the published v0.0.2 binaries** and mus
 For Excel sheet exports, each worksheet is a separate Preview operation. Hidden and very-hidden worksheets remain visible but are not selected by default; empty worksheets are skipped explicitly. Output names are deterministic and Windows-safe, such as `sales__Summary.csv`.
 
 Development builds also generate a human-readable `ZletConverter-report.txt` with relative paths, batch counters, worksheet accounting, statuses and safe diagnostics. Existing report names are not silently overwritten; deterministic `-2`, `-3`, ... suffixes are used.
+
+The final panel retains aggregate and per-workbook sheet summaries, including hidden and empty sheets skipped. A workbook counts as one source file even when it produces several worksheet files. Reports are saved in the result folder or at the ZIP root, including after Stop or partial failure. Report failures remain visible. New controls and report labels follow the existing RU/EN language setting; switching language preserves the preview and results.
+
+Real Excel sheet tests are opt-in: set `ZLET_OFFICE_INTEGRATION=1`, `ZLET_OFFICE_XLSX_SHEETS_FIXTURE` and/or `ZLET_OFFICE_XLS_SHEETS_FIXTURE` to local multi-sheet workbooks with at least two nonempty two-column worksheets, then run the `OfficeIntegration` test category. Include hidden/very-hidden sheets, Unicode values and cross-sheet formulas in manual QA. Automated tests do not substitute for integrated v0.0.3 manual QA, which remains pending before merge.
 
 Word, Excel, and PowerPoint are detected independently. If one Office application is missing, only the corresponding conversion becomes unavailable; safe-copy operations continue without Office.
 

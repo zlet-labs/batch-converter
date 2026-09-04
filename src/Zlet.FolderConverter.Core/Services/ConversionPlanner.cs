@@ -39,13 +39,46 @@ public sealed class ConversionPlanner : IConversionPlanner
         var fullRootPath = Path.GetFullPath(sourceRootPath);
         var targetRootPath = Path.GetFullPath(outputRootPath);
 
-        return scanResult.Files
+        var operations = scanResult.Files.OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
             .SelectMany(file => CreateOperations(
                 file,
                 fullRootPath,
                 targetRootPath,
                 ruleSet.GetRule(file.Format)))
             .ToArray();
+        var used = operations.Where(operation => !operation.IsWorksheetOperation)
+            .Select(operation => operation.TargetPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < operations.Length; index++)
+        {
+            var operation = operations[index];
+            if (!operation.IsWorksheetOperation || string.IsNullOrEmpty(operation.TargetPath)) continue;
+            var path = operation.TargetPath;
+            var suffix = 2;
+            while (!used.Add(path))
+                path = Path.Combine(Path.GetDirectoryName(operation.TargetPath)!,
+                    $"{Path.GetFileNameWithoutExtension(operation.TargetPath)}-{suffix++}{operation.TargetExtension}");
+            if (path == operation.TargetPath) continue;
+            var conflict = File.Exists(path) || Directory.Exists(path);
+            var status = operation.Status;
+            var message = operation.Message;
+            if (status == OperationStatus.Conflict && !conflict)
+            {
+                status = operation.WorksheetIsEmpty ? OperationStatus.Skipped
+                    : operation.AdapterAvailable ? OperationStatus.Ready : OperationStatus.EngineUnavailable;
+                message = operation.WorksheetIsEmpty ? "worksheet_empty"
+                    : operation.AdapterAvailable ? "Готово к преобразованию." : "Преобразование недоступно.";
+            }
+            operations[index] = operation with
+            {
+                TargetPath = path,
+                ResultRelativePath = Path.GetRelativePath(targetRootPath, path),
+                Status = conflict ? OperationStatus.Conflict : status,
+                Message = conflict ? "Файл результата уже существует." : message,
+                DefaultSelected = !conflict && status == OperationStatus.Ready
+                    && operation.WorksheetVisibility == WorksheetVisibility.Visible
+            };
+        }
+        return operations;
     }
 
     private IEnumerable<PlannedOperation> CreateOperations(
@@ -69,6 +102,9 @@ public sealed class ConversionPlanner : IConversionPlanner
         string targetRootPath,
         ConversionRule rule)
     {
+        if (!OutputPathGuard.IsSafeSourcePath(file.SourcePath, sourceRootPath, file.RelativePath))
+            return [Create(file, rule.Target, rule.Target.ToExtension(), string.Empty, false,
+                OperationStatus.Failed, "Исходный файл небезопасен или находится вне выбранной папки.", targetRootPath, sourceRootPath)];
         file = EnsureWorksheetMetadata(file);
         var targetExtension = rule.Target.ToExtension();
         if (!string.IsNullOrWhiteSpace(file.WorksheetInspectionErrorCode))
@@ -82,7 +118,7 @@ public sealed class ConversionPlanner : IConversionPlanner
                     string.Empty,
                     false,
                     OperationStatus.Failed,
-                    "Не удалось прочитать список листов Excel.",
+                    "worksheet_inspection_failure",
                     targetRootPath,
                     sourceRootPath,
                     worksheetName: string.Empty,
@@ -109,7 +145,7 @@ public sealed class ConversionPlanner : IConversionPlanner
                     string.Empty,
                     false,
                     OperationStatus.Skipped,
-                    "В книге Excel не найдено обычных листов.",
+                    "worksheet_none",
                     targetRootPath,
                     sourceRootPath,
                     worksheetName: string.Empty,
@@ -187,7 +223,7 @@ public sealed class ConversionPlanner : IConversionPlanner
                     targetPath,
                     adapterAvailable,
                     OperationStatus.Skipped,
-                    "Пустой лист не экспортируется.",
+                    "worksheet_empty",
                     targetRootPath,
                     sourceRootPath,
                     sheet.Name,
@@ -247,7 +283,7 @@ public sealed class ConversionPlanner : IConversionPlanner
                 true,
                 OperationStatus.Ready,
                 hidden
-                    ? "Скрытый лист. Не выбран по умолчанию."
+                    ? "worksheet_hidden"
                     : "Готово к преобразованию.",
                 targetRootPath,
                 sourceRootPath,
@@ -270,7 +306,9 @@ public sealed class ConversionPlanner : IConversionPlanner
             return file;
         }
 
-        if (!_worksheetCache.TryGetValue(file.SourcePath, out var inspection))
+        var info = new FileInfo(file.SourcePath);
+        var cacheKey = $"{file.SourcePath}\0{info.Length}\0{info.LastWriteTimeUtc.Ticks}";
+        if (!_worksheetCache.TryGetValue(cacheKey, out var inspection))
         {
             try
             {
@@ -288,7 +326,7 @@ public sealed class ConversionPlanner : IConversionPlanner
                     [],
                     "worksheet_inspection_failure");
             }
-            _worksheetCache[file.SourcePath] = inspection;
+            _worksheetCache[cacheKey] = inspection;
         }
 
         return inspection.Success

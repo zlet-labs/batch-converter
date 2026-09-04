@@ -52,7 +52,7 @@ public static class WorksheetOutputNameBuilder
         {
             sanitized = "Sheet";
         }
-        if (ReservedNames.Contains(sanitized))
+        if (ReservedNames.Contains(sanitized.Split('.')[0]))
         {
             sanitized = $"_{sanitized}";
         }

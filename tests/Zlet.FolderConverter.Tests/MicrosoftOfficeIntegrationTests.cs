@@ -6,6 +6,59 @@ namespace Zlet.FolderConverter.Tests;
 
 public sealed class MicrosoftOfficeIntegrationTests
 {
+    [OfficeIntegrationFact(OfficeApplicationKind.Excel, "ZLET_OFFICE_XLSX_SHEETS_FIXTURE")]
+    [Trait("Category", "OfficeIntegration")]
+    public Task Multi_sheet_xlsx_csv_utf8() => ExportSheets("ZLET_OFFICE_XLSX_SHEETS_FIXTURE", ConversionTarget.Csv);
+
+    [OfficeIntegrationFact(OfficeApplicationKind.Excel, "ZLET_OFFICE_XLSX_SHEETS_FIXTURE")]
+    [Trait("Category", "OfficeIntegration")]
+    public Task Multi_sheet_xlsx_tsv_utf8() => ExportSheets("ZLET_OFFICE_XLSX_SHEETS_FIXTURE", ConversionTarget.Tsv);
+
+    [OfficeIntegrationFact(OfficeApplicationKind.Excel, "ZLET_OFFICE_XLS_SHEETS_FIXTURE")]
+    [Trait("Category", "OfficeIntegration")]
+    public Task Legacy_xls_csv_utf8() => ExportSheets("ZLET_OFFICE_XLS_SHEETS_FIXTURE", ConversionTarget.Csv);
+
+    [OfficeIntegrationFact(OfficeApplicationKind.Excel, "ZLET_OFFICE_XLS_SHEETS_FIXTURE")]
+    [Trait("Category", "OfficeIntegration")]
+    public Task Legacy_xls_tsv_utf8() => ExportSheets("ZLET_OFFICE_XLS_SHEETS_FIXTURE", ConversionTarget.Tsv);
+
+    private static async Task ExportSheets(string fixtureVariable, ConversionTarget target)
+    {
+        var source = Path.GetFullPath(Environment.GetEnvironmentVariable(fixtureVariable)!);
+        var hash = Hash(source);
+        var output = Path.Combine(Path.GetTempPath(), "zl056-excel", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(output);
+        try
+        {
+            var detector = new MicrosoftOfficeCapabilityDetector();
+            var runner = new MicrosoftOfficeWorkerProcessRunner(new MicrosoftOfficeWorkerOptions
+            {
+                WorkerExecutablePath = Path.Combine(AppContext.BaseDirectory, "Zlet.FolderConverter.OfficeWorker.exe")
+            });
+            var inspector = new MicrosoftExcelWorkbookInspector(detector, runner);
+            var inspection = await inspector.InspectAsync(source, CancellationToken.None);
+            Assert.True(inspection.Success, inspection.ErrorCode);
+            Assert.True(inspection.Worksheets.Count >= 2, "Use a multi-sheet workbook with at least two nonempty two-column sheets.");
+            var resolver = new DefaultConversionAdapterResolver(detector, runner);
+            var format = DocumentFormatDetector.Detect(source);
+            var scan = new ScanResult(Path.GetDirectoryName(source)!,
+                [new(source, Path.GetFileName(source), format, Worksheets: inspection.Worksheets)], []);
+            var plan = new ConversionPlanner(resolver, inspector).CreatePlan(scan, scan.RootPath, output,
+                RuleSet.CreateDefault().WithRule(format, target));
+            var selected = plan.Where(p => p.Status == OperationStatus.Ready).ToArray();
+            Assert.True(selected.Length >= 2);
+            var summary = await new ConversionProcessor(resolver).ProcessAsync(selected, null, CancellationToken.None);
+            Assert.Equal(selected.Length, summary.Succeeded);
+            foreach (var operation in selected)
+            {
+                var text = new System.Text.UTF8Encoding(false, true).GetString(File.ReadAllBytes(operation.TargetPath));
+                Assert.Contains(target == ConversionTarget.Tsv ? "\t" : ",", text);
+            }
+            Assert.Equal(hash, Hash(source));
+        }
+        finally { Directory.Delete(output, true); }
+    }
+
     [OfficeBatchIntegrationFact(
         OfficeApplicationKind.Word,
         "ZLET_OFFICE_WORD_BATCH_FIXTURE_DIR")]

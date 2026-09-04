@@ -7,6 +7,7 @@ namespace Zlet.FolderConverter.OfficeWorker;
 
 internal sealed class ExcelWorksheetAutomation : IDisposable
 {
+    private bool _applicationOwned;
     private const int AutomationSecurityForceDisable = 3;
     private const int XlCsvUtf8 = 62;
     private const int XlUnicodeText = 42;
@@ -69,6 +70,14 @@ internal sealed class ExcelWorksheetAutomation : IDisposable
             Convert.ToInt64(excel.Hwnd),
             baseline);
         report(started);
+        _applicationOwned = started.OfficeProcessOwned && started.OfficeProcessId is > 0
+            && started.OfficeProcessStartTimeUtcTicks is > 0;
+        if (!_applicationOwned)
+        {
+            ReleaseComObject(_application);
+            _application = null;
+            throw new COMException("Excel session ownership could not be established.");
+        }
 
         excel.Visible = false;
         excel.DisplayAlerts = false;
@@ -150,6 +159,10 @@ internal sealed class ExcelWorksheetAutomation : IDisposable
         object? worksheets = null;
         object? worksheet = null;
         object? exportWorkbook = null;
+        object? sourceRange = null;
+        object? exportSheets = null;
+        object? exportSheet = null;
+        object? exportRange = null;
         string? unicodeTempPath = null;
         try
         {
@@ -170,9 +183,21 @@ internal sealed class ExcelWorksheetAutomation : IDisposable
             dynamic sheets = worksheets;
             worksheet = sheets[request.WorksheetName];
             dynamic sheet = worksheet;
+            sourceRange = sheet.UsedRange;
+            dynamic values = sourceRange;
+            object? computedValues = values.Value2;
+            // Visibility changes are in memory only; the source is closed without saving.
+            sheet.Visible = -1;
             sheet.Copy();
             exportWorkbook = excel.ActiveWorkbook;
             dynamic export = exportWorkbook;
+            exportSheets = export.Worksheets;
+            dynamic copiedSheets = exportSheets;
+            exportSheet = copiedSheets[1];
+            dynamic copiedSheet = exportSheet;
+            exportRange = copiedSheet.UsedRange;
+            dynamic copiedRange = exportRange;
+            copiedRange.Value2 = computedValues;
 
             if (request.Target == ConversionTarget.Csv)
             {
@@ -182,7 +207,7 @@ internal sealed class ExcelWorksheetAutomation : IDisposable
                     AccessMode: 1,
                     ConflictResolution: 2,
                     AddToMru: false,
-                    Local: true);
+                    Local: false);
             }
             else if (request.Target == ConversionTarget.Tsv)
             {
@@ -202,8 +227,7 @@ internal sealed class ExcelWorksheetAutomation : IDisposable
                 ReleaseComObject(exportWorkbook);
                 exportWorkbook = null;
 
-                var text = File.ReadAllText(unicodeTempPath, Encoding.Unicode);
-                File.WriteAllText(request.OutputPath, text, new UTF8Encoding(false));
+                TranscodeTabSeparated(unicodeTempPath, request.OutputPath);
             }
             else
             {
@@ -214,6 +238,10 @@ internal sealed class ExcelWorksheetAutomation : IDisposable
         }
         finally
         {
+            ReleaseComObject(exportRange);
+            ReleaseComObject(exportSheet);
+            ReleaseComObject(exportSheets);
+            ReleaseComObject(sourceRange);
             TryCloseWorkbook(exportWorkbook);
             TryCloseWorkbook(sourceWorkbook);
             ReleaseComObject(exportWorkbook);
@@ -223,6 +251,15 @@ internal sealed class ExcelWorksheetAutomation : IDisposable
             ReleaseComObject(workbooks);
             TryDeleteFile(unicodeTempPath);
         }
+    }
+
+    internal static void TranscodeTabSeparated(string source, string target)
+    {
+        using var input = new StreamReader(source, Encoding.Unicode, detectEncodingFromByteOrderMarks: true);
+        using var output = new StreamWriter(new FileStream(target, FileMode.CreateNew), new UTF8Encoding(false));
+        var buffer = new char[8192];
+        int count;
+        while ((count = input.Read(buffer, 0, buffer.Length)) > 0) output.Write(buffer, 0, count);
     }
 
     private void ResetApplication()
@@ -235,7 +272,7 @@ internal sealed class ExcelWorksheetAutomation : IDisposable
         try
         {
             dynamic excel = _application;
-            excel.Quit();
+            if (_applicationOwned) excel.Quit();
         }
         catch (Exception exception) when (exception is COMException
                                            or InvalidComObjectException
@@ -246,6 +283,7 @@ internal sealed class ExcelWorksheetAutomation : IDisposable
         {
             ReleaseComObject(_application);
             _application = null;
+            _applicationOwned = false;
         }
     }
 

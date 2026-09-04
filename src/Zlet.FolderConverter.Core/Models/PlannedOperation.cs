@@ -19,9 +19,12 @@ public sealed record PlannedOperation(
     bool DefaultSelected = true,
     string ResultRelativePath = "")
 {
+    public string OperationKey => $"{SourcePath}\0{WorksheetName}\0{Target}";
     public string TargetFormat => Target == ConversionTarget.Skip
         ? "Не трогать"
         : Target.ToDisplayName();
 
     public bool IsWorksheetOperation => !string.IsNullOrWhiteSpace(WorksheetName);
+    public bool IsWorksheetExport => SourceFormat is SourceFormat.Xls or SourceFormat.Xlsx
+        && Target is ConversionTarget.Csv or ConversionTarget.Tsv;
 }

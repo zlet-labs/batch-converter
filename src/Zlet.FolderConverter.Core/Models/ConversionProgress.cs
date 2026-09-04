@@ -6,4 +6,5 @@ public sealed record ConversionProgress(
     string RelativePath,
     OperationStatus Status,
     ConversionResult? Result = null,
-    int? OperationPercent = null);
+    int? OperationPercent = null,
+    string WorksheetName = "");

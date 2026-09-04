@@ -15,8 +15,8 @@ public sealed class RuleSetTests
     [InlineData(SourceFormat.Odt, ConversionTarget.Skip)]
     [InlineData(SourceFormat.Ods, ConversionTarget.Skip)]
     [InlineData(SourceFormat.Odp, ConversionTarget.Skip)]
-    [InlineData(SourceFormat.Pdf, ConversionTarget.Skip)]
-    [InlineData(SourceFormat.Image, ConversionTarget.Skip)]
+    [InlineData(SourceFormat.Pdf, ConversionTarget.Copy)]
+    [InlineData(SourceFormat.Image, ConversionTarget.Copy)]
     [InlineData(SourceFormat.Archive, ConversionTarget.Skip)]
     [InlineData(SourceFormat.Unknown, ConversionTarget.Skip)]
     public void Default_rules_match_product_defaults(
@@ -43,11 +43,11 @@ public sealed class RuleSetTests
     }
 
     [Fact]
-    public void Xlsx_to_csv_is_not_available()
+    public void Xlsx_supports_copy_csv_tsv_and_skip()
     {
         var capability = FormatCapabilityCatalog.Get(SourceFormat.Xlsx);
 
-        Assert.Equal([ConversionTarget.Copy, ConversionTarget.Skip], capability.AllowedTargets);
+        Assert.Equal([ConversionTarget.Copy, ConversionTarget.Csv, ConversionTarget.Tsv, ConversionTarget.Skip], capability.AllowedTargets);
     }
 
     [Fact]

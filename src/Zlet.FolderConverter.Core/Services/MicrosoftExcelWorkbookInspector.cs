@@ -57,7 +57,7 @@ public sealed class MicrosoftExcelWorkbookInspector : IExcelWorkbookInspector
             return new(false, [], result.ErrorCode);
         }
 
-        if (result.Worksheets is { Count: > 0 })
+        if (result.Worksheets is not null)
         {
             return new(true, result.Worksheets);
         }

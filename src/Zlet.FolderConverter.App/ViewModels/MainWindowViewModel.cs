@@ -27,6 +27,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _isConverting;
     private bool _isStopping;
     private CancellationTokenSource? _conversionCancellation;
+    private CancellationTokenSource? _planningCancellation;
+    private CancellationTokenSource? _scanCancellation;
+    public Task PreviewPlanningTask { get; private set; } = Task.CompletedTask;
+    public bool IsPlanning => _planningCancellation is not null;
     private string _copyListStatus = string.Empty;
     private int? _copiedListCount;
     private bool _copyListWasEmpty;
@@ -317,13 +321,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    public bool IsBusy => IsScanning || IsConverting;
+    public bool IsBusy => IsScanning || IsConverting || IsPlanning;
     public bool CanScan => !IsBusy && Directory.Exists(NormalizePathInput(SelectedFolder));
     public bool CanConvert => !IsBusy
                               && SelectedReadyCount > 0
                               && !HasOutputPathError
                               && !string.IsNullOrWhiteSpace(OutputPath);
     public bool CanChangeSettings => !IsBusy;
+    public bool CanChangeRules => !IsScanning && !IsConverting;
     public bool HasRules => FormatRules.Count > 0;
     public bool HasPreview => Operations.Count > 0;
     public bool HasErrors => ErrorMessages.Count > 0;
@@ -511,12 +516,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public int FinalSucceeded => FinalConverted + FinalCopied;
     public bool WasStoppedByUser => _finalWasStopped;
     public bool ZipPublishedByThisRun { get; private set; }
+    public bool ZipPublicationFailed => SelectedOutputMode == OutputMode.Zip && FinalSucceeded > 0 && !ZipPublishedByThisRun;
     public LocalizationService Localization => _localization;
     private string _reportStatusKey = string.Empty;
     public string ReportStatusText => string.IsNullOrEmpty(_reportStatusKey) ? string.Empty : L(_reportStatusKey);
     public void SetReportStatus(bool success)
     {
-        _reportStatusKey = success ? "ReportWritten" : "ReportFailed";
+        _reportStatusKey = success ? "ReportWritten" : ZipPublicationFailed ? "ZipPublicationReportSkipped" : "ReportFailed";
         if (success && SelectedOutputMode == OutputMode.Zip)
         {
             ResultFolder = NormalizePathInput(OutputPath);
@@ -598,6 +604,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public async Task ScanAsync(CancellationToken cancellationToken = default)
     {
+        _planningCancellation?.Cancel();
+        _scanCancellation?.Cancel();
         var selectedFolder = NormalizePathInput(SelectedFolder);
         var includeSubfolders = IncludeSubfolders;
         if (!Directory.Exists(selectedFolder))
@@ -615,6 +623,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(CanCopySelectedFolder));
         }
         SourcePathError = string.Empty;
+        using var scanCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _scanCancellation = scanCancellation;
         IsScanning = true;
         SetState("Scanning");
         SetEmptyState("Scanning");
@@ -633,7 +643,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 includeSubfolders,
                 excludedDirectory,
                 excludedFile,
-                cancellationToken);
+                scanCancellation.Token);
+            scanCancellation.Token.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(_scanCancellation, scanCancellation)) return;
             _lastScan = scanResult;
             _scanRoot = selectedFolder;
             _ruleSet = RuleSet.CreateDefault();
@@ -660,19 +672,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     _localization));
             }
 
-            RebuildPreview();
+            await RebuildPreviewAsync(scanCancellation.Token);
+            scanCancellation.Token.ThrowIfCancellationRequested();
             if (Operations.Count == 0) SetEmptyState("NoFiles");
             else { _emptyResourceKey = null; EmptyStateMessage = string.Empty; }
             SetState("ScanCompleteFormat", FoundCount);
         }
         finally
         {
-            IsScanning = false;
+            if (ReferenceEquals(_scanCancellation, scanCancellation))
+            {
+                _scanCancellation = null;
+                IsScanning = false;
+            }
         }
     }
 
     public async Task ConvertAsync(CancellationToken cancellationToken = default)
     {
+        if (IsPlanning) return;
         var originalRows = Operations.ToArray();
         var selectedRows = originalRows
             .Where(row => row.CanSelect && row.IsSelected)
@@ -803,7 +821,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             FreezeConversionTiming();
             ResultFolder = SelectedOutputMode == OutputMode.Folder
                 ? NormalizePathInput(OutputPath)
-                : File.Exists(NormalizePathInput(OutputPath))
+                : ZipPublishedByThisRun
                     ? NormalizePathInput(OutputPath)
                     : string.Empty;
             HasFinalReport = true;
@@ -861,7 +879,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
                 ResultFolder = SelectedOutputMode == OutputMode.Folder
                     ? NormalizePathInput(OutputPath)
-                    : File.Exists(NormalizePathInput(OutputPath))
+                    : ZipPublishedByThisRun
                         ? NormalizePathInput(OutputPath)
                         : string.Empty;
                 _finalWasStopped = true;
@@ -1016,7 +1034,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void ChangeRule(SourceFormat sourceFormat, ConversionTarget target)
     {
-        if (IsBusy || _lastScan is null)
+        if (IsScanning || IsConverting || _lastScan is null)
         {
             return;
         }
@@ -1027,41 +1045,67 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         SetState("RuleChanged");
     }
 
-    private void RebuildPreview()
+    private void RebuildPreview() => PreviewPlanningTask = RebuildPreviewAsync();
+
+    public async Task RebuildPreviewAsync(CancellationToken cancellationToken = default)
     {
-        var previousSelection = Operations
-            .Where(row => row.CanSelect)
-            .ToDictionary(
-                row => row.Operation.OperationKey,
-                row => row.IsSelected,
-                StringComparer.OrdinalIgnoreCase);
-        Operations.Clear();
-        if (_lastScan is not null)
+        _planningCancellation?.Cancel();
+        using var request = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _planningCancellation = request;
+        NotifyAvailability();
+        try
         {
-            var outputRoot = SelectedOutputMode == OutputMode.Folder
-                ? NormalizePathInput(OutputPath)
-                : _zipStagingRoot;
-            foreach (var operation in _conversionPlanner.CreatePlan(
-                         _lastScan,
-                         _scanRoot,
-                         outputRoot,
-                         _ruleSet))
+            var previousSelection = Operations
+                .Where(row => row.CanSelect)
+                .ToDictionary(
+                    row => row.Operation.OperationKey,
+                    row => row.IsSelected,
+                    StringComparer.OrdinalIgnoreCase);
+            if (_lastScan is not null)
             {
-                Operations.Add(new OperationRowViewModel(
-                    operation,
-                    isSelected: operation.Status == OperationStatus.Ready
-                        && (previousSelection.TryGetValue(operation.OperationKey, out var selected)
-                            ? selected : operation.DefaultSelected),
-                    selectionChanged: SelectionChanged,
-                    localization: _localization));
+                var outputRoot = SelectedOutputMode == OutputMode.Folder
+                    ? NormalizePathInput(OutputPath)
+                    : _zipStagingRoot;
+                var plan = await _conversionPlanner.CreatePlanAsync(
+                             _lastScan,
+                             _scanRoot,
+                             outputRoot,
+                             _ruleSet, request.Token);
+                request.Token.ThrowIfCancellationRequested();
+                if (!ReferenceEquals(_planningCancellation, request)) return;
+                Operations.Clear();
+                foreach (var operation in plan)
+                {
+                    Operations.Add(new OperationRowViewModel(
+                        operation,
+                        isSelected: operation.Status == OperationStatus.Ready
+                            && (previousSelection.TryGetValue(operation.OperationKey, out var selected)
+                                ? selected : operation.DefaultSelected),
+                        selectionChanged: SelectionChanged,
+                        localization: _localization));
+                }
+            }
+
+            UpdatePreviewSummary();
+            OnPropertyChanged(nameof(HasRules));
+            OnPropertyChanged(nameof(HasPreview));
+            OnPropertyChanged(nameof(HasEngineUnavailable));
+            OnPropertyChanged(nameof(VisibleOperations));
+        }
+        catch (OperationCanceledException) when (request.IsCancellationRequested) { }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            if (ReferenceEquals(_planningCancellation, request) && !request.IsCancellationRequested)
+                AddLocalizedError("ScanFailed");
+        }
+        finally
+        {
+            if (ReferenceEquals(_planningCancellation, request))
+            {
+                _planningCancellation = null;
+                NotifyAvailability();
             }
         }
-
-        UpdatePreviewSummary();
-        OnPropertyChanged(nameof(HasRules));
-        OnPropertyChanged(nameof(HasPreview));
-        OnPropertyChanged(nameof(HasEngineUnavailable));
-        OnPropertyChanged(nameof(VisibleOperations));
     }
 
     private void UpdatePreviewSummary()
@@ -1353,6 +1397,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private void NotifyAvailability()
     {
         OnPropertyChanged(nameof(IsBusy));
+        OnPropertyChanged(nameof(IsPlanning));
+        OnPropertyChanged(nameof(CanChangeRules));
         OnPropertyChanged(nameof(CanScan));
         OnPropertyChanged(nameof(CanConvert));
         OnPropertyChanged(nameof(CanChangeSettings));

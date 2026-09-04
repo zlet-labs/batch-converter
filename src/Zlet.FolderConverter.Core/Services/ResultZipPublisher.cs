@@ -94,7 +94,9 @@ public sealed class ResultZipPublisher
         {
             var sourcePath = Path.GetFullPath(result.Operation.TargetPath);
             if (!File.Exists(sourcePath)
-                || new FileInfo(sourcePath).Length == 0
+                || (new FileInfo(sourcePath).Length == 0
+                    && !(result.Operation.Target == ConversionTarget.Copy
+                        && result.Operation.SourceFormat is SourceFormat.Csv or SourceFormat.Tsv))
                 || !sourcePath.StartsWith(
                     stagingRoot + Path.DirectorySeparatorChar,
                     StringComparison.OrdinalIgnoreCase)

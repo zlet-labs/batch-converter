@@ -6,7 +6,7 @@ public sealed class ConversionPlanner : IConversionPlanner
 {
     private readonly IConversionAdapterResolver _adapterResolver;
     private readonly IExcelWorkbookInspector _excelInspector;
-    private readonly Dictionary<string, ExcelWorkbookInspectionResult> _worksheetCache =
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ExcelWorkbookInspectionResult> _worksheetCache =
         new(StringComparer.OrdinalIgnoreCase);
 
     public ConversionPlanner(
@@ -24,6 +24,23 @@ public sealed class ConversionPlanner : IConversionPlanner
         string rootPath,
         RuleSet ruleSet) =>
         CreatePlan(scanResult, rootPath, Path.Combine(Path.GetFullPath(rootPath), "_converted"), ruleSet);
+
+    public async Task<IReadOnlyList<PlannedOperation>> CreatePlanAsync(
+        ScanResult scanResult, string sourceRootPath, string outputRootPath,
+        RuleSet ruleSet, CancellationToken cancellationToken)
+    {
+        var files = new List<ScannedFile>(scanResult.Files.Count);
+        foreach (var file in scanResult.Files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var inspect = file.Format is SourceFormat.Xls or SourceFormat.Xlsx
+                && ruleSet.GetRule(file.Format).Target is ConversionTarget.Csv or ConversionTarget.Tsv
+                && OutputPathGuard.IsSafeSourcePath(file.SourcePath, sourceRootPath, file.RelativePath);
+            files.Add(inspect ? await EnsureWorksheetMetadataAsync(file, cancellationToken).ConfigureAwait(false) : file);
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return CreatePlan(scanResult with { Files = files }, sourceRootPath, outputRootPath, ruleSet);
+    }
 
     public IReadOnlyList<PlannedOperation> CreatePlan(
         ScanResult scanResult,
@@ -56,7 +73,7 @@ public sealed class ConversionPlanner : IConversionPlanner
             var suffix = 2;
             while (!used.Add(path))
                 path = Path.Combine(Path.GetDirectoryName(operation.TargetPath)!,
-                    $"{Path.GetFileNameWithoutExtension(operation.TargetPath)}-{suffix++}{operation.TargetExtension}");
+                    WorksheetOutputNameBuilder.WithCollisionSuffix(Path.GetFileName(operation.TargetPath), suffix++));
             if (path == operation.TargetPath) continue;
             var conflict = File.Exists(path) || Directory.Exists(path);
             var status = operation.Status;
@@ -105,7 +122,8 @@ public sealed class ConversionPlanner : IConversionPlanner
         if (!OutputPathGuard.IsSafeSourcePath(file.SourcePath, sourceRootPath, file.RelativePath))
             return [Create(file, rule.Target, rule.Target.ToExtension(), string.Empty, false,
                 OperationStatus.Failed, "Исходный файл небезопасен или находится вне выбранной папки.", targetRootPath, sourceRootPath)];
-        file = EnsureWorksheetMetadata(file);
+        if (file.Worksheets is null && string.IsNullOrEmpty(file.WorksheetInspectionErrorCode) && _excelInspector.IsAvailable)
+            throw new InvalidOperationException("Worksheet discovery requires CreatePlanAsync.");
         var targetExtension = rule.Target.ToExtension();
         if (!string.IsNullOrWhiteSpace(file.WorksheetInspectionErrorCode))
         {
@@ -297,7 +315,7 @@ public sealed class ConversionPlanner : IConversionPlanner
         return result;
     }
 
-    private ScannedFile EnsureWorksheetMetadata(ScannedFile file)
+    private async Task<ScannedFile> EnsureWorksheetMetadataAsync(ScannedFile file, CancellationToken cancellationToken)
     {
         if (file.Worksheets is not null
             || !string.IsNullOrWhiteSpace(file.WorksheetInspectionErrorCode)
@@ -312,10 +330,7 @@ public sealed class ConversionPlanner : IConversionPlanner
         {
             try
             {
-                inspection = _excelInspector
-                    .InspectAsync(file.SourcePath, CancellationToken.None)
-                    .GetAwaiter()
-                    .GetResult();
+                inspection = await _excelInspector.InspectAsync(file.SourcePath, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is IOException
                                                or UnauthorizedAccessException
@@ -326,12 +341,13 @@ public sealed class ConversionPlanner : IConversionPlanner
                     [],
                     "worksheet_inspection_failure");
             }
-            _worksheetCache[cacheKey] = inspection;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (inspection.Success) _worksheetCache[cacheKey] = inspection;
         }
 
         return inspection.Success
             ? file with { Worksheets = inspection.Worksheets }
-            : file with { WorksheetInspectionErrorCode = inspection.ErrorCode };
+            : file with { WorksheetInspectionErrorCode = string.IsNullOrEmpty(inspection.ErrorCode) ? "worksheet_inspection_failure" : inspection.ErrorCode };
     }
 
     private PlannedOperation CreateOperation(

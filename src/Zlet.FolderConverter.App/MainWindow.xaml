@@ -275,7 +275,7 @@
                                             <DataTemplate>
                                                 <ComboBox ItemsSource="{Binding Targets}"
                                                           SelectedItem="{Binding SelectedTarget, Mode=TwoWay}"
-                                                          IsEnabled="{Binding DataContext.CanChangeSettings, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          IsEnabled="{Binding DataContext.CanChangeRules, RelativeSource={RelativeSource AncestorType=Window}}"
                                                           MinWidth="112">
                                                     <ComboBox.ItemTemplate>
                                                         <DataTemplate>

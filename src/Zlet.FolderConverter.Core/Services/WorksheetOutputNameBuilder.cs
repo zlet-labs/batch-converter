@@ -4,6 +4,8 @@ namespace Zlet.FolderConverter.Core.Services;
 
 public static class WorksheetOutputNameBuilder
 {
+    // Leave room for SafeFileOperationExecutor's dot/GUID/tmp staging suffix (< 255 total).
+    public const int MaxFileNameLength = 200;
     private static readonly HashSet<string> ReservedNames =
         new(StringComparer.OrdinalIgnoreCase)
         {
@@ -25,17 +27,41 @@ public static class WorksheetOutputNameBuilder
         foreach (var worksheetName in worksheetNames)
         {
             var safeSheet = SanitizeSegment(worksheetName);
-            var baseName = $"{SanitizeSegment(workbookBaseName)}__{safeSheet}";
-            var candidate = baseName + normalizedExtension;
+            var workbook = SanitizeSegment(workbookBaseName);
+            var candidate = CreateName(workbook, safeSheet, normalizedExtension, "");
             var suffix = 2;
             while (!used.Add(candidate))
             {
-                candidate = $"{baseName}-{suffix}{normalizedExtension}";
+                candidate = CreateName(workbook, safeSheet, normalizedExtension, $"-{suffix}");
                 suffix++;
             }
             result.Add(candidate);
         }
         return result;
+    }
+
+    private static string CreateName(string workbook, string sheet, string extension, string suffix)
+    {
+        var budget = MaxFileNameLength - extension.Length - suffix.Length - 2;
+        var sheetBudget = Math.Min(sheet.Length, budget / 2);
+        var workbookBudget = Math.Min(workbook.Length, budget - sheetBudget);
+        sheetBudget = budget - workbookBudget;
+        return $"{TrimToBudget(workbook, workbookBudget)}__{TrimToBudget(sheet, sheetBudget)}{suffix}{extension}";
+    }
+
+    public static string WithCollisionSuffix(string fileName, int suffix)
+    {
+        var extension = Path.GetExtension(fileName);
+        var tail = $"-{suffix}{extension}";
+        return TrimToBudget(Path.GetFileNameWithoutExtension(fileName), MaxFileNameLength - tail.Length) + tail;
+    }
+
+    private static string TrimToBudget(string value, int budget)
+    {
+        if (budget < 1) throw new ArgumentException("Filename extension leaves no room for a name.");
+        var length = Math.Min(value.Length, budget);
+        if (length < value.Length && char.IsHighSurrogate(value[length - 1])) length--;
+        return value[..length].TrimEnd(' ', '.');
     }
 
     public static string SanitizeSegment(string value)

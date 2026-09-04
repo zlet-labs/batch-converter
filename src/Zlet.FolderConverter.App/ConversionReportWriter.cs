@@ -34,6 +34,8 @@ public static class ConversionReportWriter
                 return;
             }
 
+            // A report-only archive is legitimate only when no outputs succeeded.
+            if (viewModel.ZipPublicationFailed) throw new IOException();
             var zipPath = MainWindowViewModel.NormalizePathInput(viewModel.OutputPath);
             var directory = Path.GetDirectoryName(zipPath);
             if (string.IsNullOrWhiteSpace(directory))
@@ -116,7 +118,7 @@ public static class ConversionReportWriter
         builder.AppendLine();
         foreach (var row in operations)
         {
-            builder.AppendLine($"[{ToReportStatus(row)}]");
+            builder.AppendLine($"[{ToReportStatus(row, l)}]");
             builder.AppendLine(row.Operation.IsWorksheetOperation
                 ? $"{SafeRelativePath(row.Operation.RelativePath)} / {SafeRelativePath(row.Operation.WorksheetName)}"
                 : SafeRelativePath(row.Operation.RelativePath));
@@ -195,26 +197,27 @@ public static class ConversionReportWriter
             or OperationStatus.Cancelled
             or OperationStatus.NotProcessed;
 
-    private static string ToReportStatus(OperationRowViewModel row)
+    private static string ToReportStatus(OperationRowViewModel row, LocalizationService localization)
     {
         if (row.IsNotSelected)
         {
-            return "NOT SELECTED";
+            return localization.Get("ReportStatusNotSelected");
         }
 
-        return row.Operation.Status switch
+        var key = row.Operation.Status switch
         {
-            OperationStatus.Succeeded when row.Operation.Target == ConversionTarget.Copy => "COPIED",
-            OperationStatus.Succeeded => "CONVERTED",
-            OperationStatus.Skipped => "SKIPPED",
-            OperationStatus.EngineUnavailable or OperationStatus.Unsupported => "UNAVAILABLE",
-            OperationStatus.Conflict => "CONFLICT",
-            OperationStatus.Failed => "FAILED",
-            OperationStatus.Cancelled => "CANCELLED",
-            OperationStatus.NotProcessed => "NOT PROCESSED",
-            OperationStatus.Ready => "NOT SELECTED",
-            _ => row.Operation.Status.ToString().ToUpperInvariant()
+            OperationStatus.Succeeded when row.Operation.Target == ConversionTarget.Copy => "ReportStatusCopied",
+            OperationStatus.Succeeded => "ReportStatusConverted",
+            OperationStatus.Skipped => "ReportStatusSkipped",
+            OperationStatus.EngineUnavailable or OperationStatus.Unsupported => "ReportStatusUnavailable",
+            OperationStatus.Conflict => "ReportStatusConflict",
+            OperationStatus.Failed => "ReportStatusFailed",
+            OperationStatus.Cancelled => "ReportStatusCancelled",
+            OperationStatus.NotProcessed => "ReportStatusNotProcessed",
+            OperationStatus.Ready => "ReportStatusNotSelected",
+            _ => null
         };
+        return key is null ? row.Operation.Status.ToString() : localization.Get(key);
     }
 
     private static string SafeRelativePath(string path)

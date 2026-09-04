@@ -19,14 +19,14 @@ public sealed class NotebookFormatsTests : IDisposable
     [InlineData(SourceFormat.Xls, ConversionTarget.Tsv)]
     [InlineData(SourceFormat.Xlsx, ConversionTarget.Csv)]
     [InlineData(SourceFormat.Xlsx, ConversionTarget.Tsv)]
-    public void Discovery_and_planning_preserve_all_sheet_states(SourceFormat format, ConversionTarget target)
+    public async Task Discovery_and_planning_preserve_all_sheet_states(SourceFormat format, ConversionTarget target)
     {
         var file = Workbook(format);
         var inspector = new Inspector();
         var planner = new ConversionPlanner(new Resolver(), inspector);
         var scan = new ScanResult(_root, [file], []);
         var rules = RuleSet.CreateDefault().WithRule(format, target);
-        var plan = planner.CreatePlan(scan, _root, Path.Combine(_root, "output"), rules);
+        var plan = await planner.CreatePlanAsync(scan, _root, Path.Combine(_root, "output"), rules, default);
         Assert.Equal(4, plan.Count);
         Assert.Equal(1, inspector.Calls);
         Assert.True(plan[0].DefaultSelected);
@@ -36,7 +36,7 @@ public sealed class NotebookFormatsTests : IDisposable
         Assert.Equal(OperationStatus.Skipped, plan[3].Status);
         Assert.True(plan[3].WorksheetIsEmpty);
         Assert.All(plan, operation => Assert.EndsWith(target.ToExtension(), operation.ResultRelativePath));
-        Assert.Equal(plan.Select(p => p.TargetPath), planner.CreatePlan(scan, _root, Path.Combine(_root, "output"), rules).Select(p => p.TargetPath));
+        Assert.Equal(plan.Select(p => p.TargetPath), (await planner.CreatePlanAsync(scan, _root, Path.Combine(_root, "output"), rules, default)).Select(p => p.TargetPath));
         Assert.Equal(1, inspector.Calls);
     }
 
@@ -96,7 +96,7 @@ public sealed class NotebookFormatsTests : IDisposable
     [Fact]
     public async Task Worksheet_selection_results_counts_and_language_switch_remain_independent()
     {
-        var operations = SheetPlan();
+        var operations = await SheetPlanAsync();
         var l = LocalizationService.CreateStandalone("en-US");
         var vm = ViewModel(operations, l);
         await vm.ScanAsync();
@@ -122,7 +122,7 @@ public sealed class NotebookFormatsTests : IDisposable
     [Fact]
     public async Task Folder_report_has_suffix_privacy_details_and_does_not_affect_counters()
     {
-        var vm = ViewModel(SheetPlan(), LocalizationService.CreateStandalone("en-US"));
+        var vm = ViewModel(await SheetPlanAsync(), LocalizationService.CreateStandalone("en-US"));
         await vm.ScanAsync();
         await vm.ConvertAsync();
         var now = DateTimeOffset.Now;
@@ -149,7 +149,7 @@ public sealed class NotebookFormatsTests : IDisposable
     public async Task Report_failure_is_persistent_and_localized_and_existing_zip_is_untouched()
     {
         var l = LocalizationService.CreateStandalone("en-US");
-        var vm = ViewModel(SheetPlan(), l);
+        var vm = ViewModel(await SheetPlanAsync(), l);
         vm.SelectedOutputMode = OutputMode.Zip;
         var zip = Path.Combine(_root, "existing.zip");
         vm.OutputPath = zip;
@@ -194,7 +194,7 @@ public sealed class NotebookFormatsTests : IDisposable
     [Fact]
     public async Task Failed_sheet_does_not_replace_successful_siblings()
     {
-        var operations = SheetPlan();
+        var operations = await SheetPlanAsync();
         var resolver = new DefaultConversionAdapterResolver([new SheetFailureAdapter()]);
         var vm = new MainWindowViewModel(new Scanner(new(_root, [Workbook(SourceFormat.Xlsx)], [])),
             new Planner(operations), new ConversionProcessor(resolver), localization: LocalizationService.CreateStandalone("en-US"))
@@ -211,14 +211,14 @@ public sealed class NotebookFormatsTests : IDisposable
     }
 
     [Fact]
-    public void Workbooks_with_same_stem_have_deterministic_distinct_outputs()
+    public async Task Workbooks_with_same_stem_have_deterministic_distinct_outputs()
     {
         var scan = new ScanResult(_root, [Workbook(SourceFormat.Xls), Workbook(SourceFormat.Xlsx)], []);
         var planner = new ConversionPlanner(new Resolver(), new Inspector());
         var rules = RuleSet.CreateDefault().WithRule(SourceFormat.Xls, ConversionTarget.Csv).WithRule(SourceFormat.Xlsx, ConversionTarget.Csv);
-        var plan = planner.CreatePlan(scan, _root, Path.Combine(_root, "output"), rules);
+        var plan = await planner.CreatePlanAsync(scan, _root, Path.Combine(_root, "output"), rules, default);
         Assert.Equal(plan.Count, plan.Select(o => o.TargetPath).Distinct(StringComparer.OrdinalIgnoreCase).Count());
-        Assert.Equal(plan.Select(o => o.TargetPath), planner.CreatePlan(scan, _root, Path.Combine(_root, "output"), rules).Select(o => o.TargetPath));
+        Assert.Equal(plan.Select(o => o.TargetPath), (await planner.CreatePlanAsync(scan, _root, Path.Combine(_root, "output"), rules, default)).Select(o => o.TargetPath));
     }
 
     private sealed class SheetFailureAdapter : IConversionAdapter
@@ -236,7 +236,7 @@ public sealed class NotebookFormatsTests : IDisposable
     [InlineData(OutputMode.Zip)]
     public async Task Stop_report_preserves_completed_sibling_and_unselected_sheet(OutputMode mode)
     {
-        var operations = SheetPlan();
+        var operations = await SheetPlanAsync();
         var processor = new StopProcessor();
         var vm = new MainWindowViewModel(new Scanner(new(_root, [Workbook(SourceFormat.Xlsx)], [])),
             new Planner(operations), processor, localization: LocalizationService.CreateStandalone("en-US"))
@@ -293,8 +293,8 @@ public sealed class NotebookFormatsTests : IDisposable
         var runner = new Utf8Runner();
         var adapter = new MicrosoftOfficeConversionAdapter(OfficeApplicationKind.Excel, new ExcelAvailable(), runner, new OutputResultValidator());
         var resolver = new DefaultConversionAdapterResolver([adapter]);
-        var plan = new ConversionPlanner(resolver, new Inspector()).CreatePlan(new(_root, [file], []), _root,
-            Path.Combine(_root, "output"), RuleSet.CreateDefault().WithRule(format, target));
+        var plan = await new ConversionPlanner(resolver, new Inspector()).CreatePlanAsync(new(_root, [file], []), _root,
+            Path.Combine(_root, "output"), RuleSet.CreateDefault().WithRule(format, target), default);
         var before = File.ReadAllBytes(file.SourcePath);
         var result = await adapter.ConvertAsync(plan[0], CancellationToken.None);
         Assert.Equal(OperationStatus.Succeeded, result.Status);
@@ -359,12 +359,12 @@ public sealed class NotebookFormatsTests : IDisposable
         File.WriteAllText(source, "synthetic workbook; inspector injected");
         return new(source, relative, format);
     }
-    private PlannedOperation[] SheetPlan()
+    private async Task<PlannedOperation[]> SheetPlanAsync()
     {
         var file = Workbook(SourceFormat.Xlsx);
-        return new ConversionPlanner(new Resolver(), new Inspector()).CreatePlan(
+        return (await new ConversionPlanner(new Resolver(), new Inspector()).CreatePlanAsync(
             new(_root, [file], []), _root, Path.Combine(_root, "output"),
-            RuleSet.CreateDefault().WithRule(SourceFormat.Xlsx, ConversionTarget.Csv)).ToArray();
+            RuleSet.CreateDefault().WithRule(SourceFormat.Xlsx, ConversionTarget.Csv), default)).ToArray();
     }
     private MainWindowViewModel ViewModel(PlannedOperation[] operations, LocalizationService l) => new(
         new Scanner(new(_root, operations.Select(o => new ScannedFile(o.SourcePath, o.RelativePath, o.SourceFormat)).Distinct().ToArray(), [])),

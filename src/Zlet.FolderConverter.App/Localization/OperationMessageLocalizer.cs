@@ -51,6 +51,7 @@ public static class OperationMessageLocalizer
             ["unexpected_adapter_failure"] = "OperationProcessingFailed",
             ["invalid_json"] = "OperationInvalidJson",
             ["copy_mapping_unsupported"] = "OperationCopyUnsupported",
+            ["copy_integrity_mismatch"] = "OperationOutputInvalid",
             ["office_mapping_unsupported"] = "OperationUnsupported",
             ["office_application_missing"] = "OperationOfficeMissing",
             ["worker_missing"] = "OperationOfficeComponentUnavailable",

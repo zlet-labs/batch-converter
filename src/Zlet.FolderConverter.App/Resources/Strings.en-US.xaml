@@ -109,4 +109,14 @@
     <sys:String x:Key="ReportSheetsFound">Sheets found</sys:String>
     <sys:String x:Key="ReportSelected">Selected</sys:String>
 <sys:String x:Key="ReportOutcomeStopped">Batch stopped by user</sys:String><sys:String x:Key="ReportOutcomePartial">Completed with errors or unavailable operations</sys:String>
+  <sys:String x:Key="ReportStatusConverted">CONVERTED</sys:String>
+  <sys:String x:Key="ReportStatusCopied">COPIED</sys:String>
+  <sys:String x:Key="ReportStatusSkipped">SKIPPED</sys:String>
+  <sys:String x:Key="ReportStatusNotSelected">NOT SELECTED</sys:String>
+  <sys:String x:Key="ReportStatusUnavailable">UNAVAILABLE</sys:String>
+  <sys:String x:Key="ReportStatusConflict">CONFLICT</sys:String>
+  <sys:String x:Key="ReportStatusFailed">FAILED</sys:String>
+  <sys:String x:Key="ReportStatusCancelled">CANCELLED</sys:String>
+  <sys:String x:Key="ReportStatusNotProcessed">NOT PROCESSED</sys:String>
+  <sys:String x:Key="ZipPublicationReportSkipped">ZIP publication failed. No report-only archive was created; successful operation counts do not mean outputs were published.</sys:String>
 </ResourceDictionary>

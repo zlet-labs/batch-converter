@@ -109,4 +109,14 @@
     <sys:String x:Key="ReportSheetsFound">Листов найдено</sys:String>
     <sys:String x:Key="ReportSelected">Выбрано</sys:String>
 <sys:String x:Key="ReportOutcomeStopped">Обработка остановлена пользователем</sys:String><sys:String x:Key="ReportOutcomePartial">Завершено с ошибками или недоступными операциями</sys:String>
+  <sys:String x:Key="ReportStatusConverted">ПРЕОБРАЗОВАНО</sys:String>
+  <sys:String x:Key="ReportStatusCopied">СКОПИРОВАНО</sys:String>
+  <sys:String x:Key="ReportStatusSkipped">ПРОПУЩЕНО</sys:String>
+  <sys:String x:Key="ReportStatusNotSelected">НЕ ВЫБРАНО</sys:String>
+  <sys:String x:Key="ReportStatusUnavailable">НЕДОСТУПНО</sys:String>
+  <sys:String x:Key="ReportStatusConflict">КОНФЛИКТ</sys:String>
+  <sys:String x:Key="ReportStatusFailed">ОШИБКА</sys:String>
+  <sys:String x:Key="ReportStatusCancelled">ОТМЕНЕНО</sys:String>
+  <sys:String x:Key="ReportStatusNotProcessed">НЕ ОБРАБОТАНО</sys:String>
+  <sys:String x:Key="ZipPublicationReportSkipped">Не удалось опубликовать ZIP. Архив только с отчётом не создан; успешные операции не означают, что результаты опубликованы.</sys:String>
 </ResourceDictionary>
